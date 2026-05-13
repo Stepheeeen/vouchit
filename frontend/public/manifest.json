@@ -1,0 +1,21 @@
+{
+  "name": "Vouchit",
+  "short_name": "Vouchit",
+  "description": "P2P escrow wagering platform. Winner gets paid.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#1e3a8a",
+  "theme_color": "#1e3a8a",
+  "icons": [
+    {
+      "src": "/icon.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "/icon.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}

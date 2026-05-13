@@ -1,0 +1,19 @@
+services:
+  - type: web
+    name: vouchit-backend
+    env: node
+    plan: free
+    rootDir: backend
+    buildCommand: npm install && npx prisma generate && npm run build
+    startCommand: npm run start:prod
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DATABASE_URL
+        sync: false # You must set this manually in the Render dashboard
+      - key: JWT_SECRET
+        sync: false # Set manually
+      - key: RESEND_API_KEY
+        sync: false # Set manually
+      - key: FRONTEND_URL
+        sync: false # Set manually after deploying frontend

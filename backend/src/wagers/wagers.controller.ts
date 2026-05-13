@@ -1,0 +1,30 @@
+import { Controller, Get, Post, Body, Param, UseGuards, Request } from '@nestjs/common';
+import { WagersService } from './wagers.service';
+import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+
+@Controller('wagers')
+export class WagersController {
+  constructor(private readonly wagersService: WagersService) {}
+
+  @UseGuards(JwtAuthGuard)
+  @Post()
+  async createWager(@Request() req: any, @Body() body: { description: string; amount: number }) {
+    return this.wagersService.createWager(req.user.userId, body.description, body.amount);
+  }
+
+  @Get()
+  async getAllWagers() {
+    return this.wagersService.findAll();
+  }
+
+  @Get(':id')
+  async getWager(@Param('id') id: string) {
+    return this.wagersService.findOne(id);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post(':id/join')
+  async joinWager(@Request() req: any, @Param('id') id: string, @Body() body: { amount: number }) {
+    return this.wagersService.joinWager(id, req.user.userId, body.amount);
+  }
+}
