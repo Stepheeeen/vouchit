@@ -159,13 +159,14 @@ export default function SettingsPage() {
         const profile = await userApi.getProfile();
         setUser(profile);
 
-        const storedBank = localStorage.getItem("vouchit_bank");
-        if (storedBank) {
-          try {
-            setBankAccount(JSON.parse(storedBank));
-          } catch (e) {
-            console.error(e);
+        try {
+          const { walletApi } = await import("@/lib/api");
+          const bank = await walletApi.getLinkedBank();
+          if (bank) {
+            setBankAccount(bank);
           }
+        } catch (e) {
+          console.error(e);
         }
         setName(profile.displayName || "");
         setEmail(profile.email || "");
@@ -599,10 +600,17 @@ export default function SettingsPage() {
                           </div>
                         </div>
                         <button 
-                          onClick={() => {
-                            localStorage.removeItem("vouchit_bank");
-                            setBankAccount(null);
-                            import("sonner").then(({ toast }) => toast.success("Bank account unlinked."));
+                          onClick={async () => {
+                            try {
+                              const { walletApi } = await import("@/lib/api");
+                              await walletApi.unlinkBank();
+                              setBankAccount(null);
+                              const { toast } = await import("sonner");
+                              toast.success("Bank account unlinked.");
+                            } catch (e: any) {
+                              const { toast } = await import("sonner");
+                              toast.error("Failed to unlink bank account.");
+                            }
                           }}
                           className="text-xs font-semibold text-[var(--danger)] hover:bg-[var(--danger)]/5 border border-[var(--danger)]/20 px-3 py-1.5 rounded-xl transition-colors cursor-pointer"
                         >
@@ -820,18 +828,27 @@ export default function SettingsPage() {
                   Cancel
                 </button>
                 <button 
-                  onClick={() => {
+                  onClick={async () => {
                     if (!bankName || !accountNumber || !accountName) return;
-                    const data = { bankName, bankCode, accountNumber, accountName };
-                    localStorage.setItem("vouchit_bank", JSON.stringify(data));
-                    setBankAccount(data);
-                    setShowBankModal(false);
-                    import("sonner").then(({ toast }) => toast.success("Bank account linked successfully!"));
+                    setIsResolving(true);
+                    try {
+                      const { walletApi } = await import("@/lib/api");
+                      const data = { bankName, bankCode, accountNumber, accountName };
+                      await walletApi.linkBank(data);
+                      setBankAccount(data);
+                      setShowBankModal(false);
+                      const { toast } = await import("sonner");
+                      toast.success("Bank account linked successfully!");
+                    } catch (err: any) {
+                      setResolutionError(err.message || "Failed to link bank account");
+                    } finally {
+                      setIsResolving(false);
+                    }
                   }}
                   disabled={!bankName || accountNumber.length !== 10 || !accountName || isResolving}
                   className="flex-1 py-3 font-semibold bg-[var(--primary)] text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center"
                 >
-                  Link Account
+                  {isResolving ? <Loader2 className="h-5 w-5 animate-spin" /> : "Link Account"}
                 </button>
               </div>
             </div>

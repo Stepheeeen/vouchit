@@ -142,6 +142,11 @@ export class LedgerService {
   async simulateWithdrawal(userId: string, amount: number) {
     if (amount <= 0) throw new BadRequestException('Amount must be positive');
 
+    const bankAccount = await this.prisma.bankAccount.findUnique({ where: { userId } });
+    if (!bankAccount) {
+      throw new BadRequestException('Please link a bank account before withdrawing');
+    }
+
     const wallet = await this.getWallet(userId);
 
     if (Number(wallet.availableBalance) < amount) {
@@ -200,5 +205,41 @@ export class LedgerService {
         error.response?.data?.message || 'Could not resolve bank account details. Check number and bank.'
       );
     }
+  }
+
+  async getBankAccount(userId: string) {
+    const bankAccount = await this.prisma.bankAccount.findUnique({ where: { userId } });
+    if (!bankAccount) return null;
+    return bankAccount;
+  }
+
+  async linkBankAccount(userId: string, data: { bankCode: string, bankName: string, accountNumber: string, accountName: string }) {
+    // Upsert so if they link a new one, it overrides the old one
+    const bankAccount = await this.prisma.bankAccount.upsert({
+      where: { userId },
+      update: {
+        bankCode: data.bankCode,
+        bankName: data.bankName,
+        accountNumber: data.accountNumber,
+        accountName: data.accountName,
+      },
+      create: {
+        userId,
+        bankCode: data.bankCode,
+        bankName: data.bankName,
+        accountNumber: data.accountNumber,
+        accountName: data.accountName,
+      }
+    });
+    return bankAccount;
+  }
+
+  async unlinkBankAccount(userId: string) {
+    try {
+      await this.prisma.bankAccount.delete({ where: { userId } });
+    } catch (e) {
+      // Ignore if doesn't exist
+    }
+    return { success: true };
   }
 }

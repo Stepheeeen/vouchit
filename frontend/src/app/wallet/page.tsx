@@ -105,14 +105,18 @@ export default function WalletPage() {
 
   useEffect(() => {
     loadWallet();
-    const storedBank = localStorage.getItem("vouchit_bank");
-    if (storedBank) {
+    const fetchBank = async () => {
       try {
-        setBankAccount(JSON.parse(storedBank));
+        const { walletApi } = await import("@/lib/api");
+        const bank = await walletApi.getLinkedBank();
+        if (bank) {
+          setBankAccount(bank);
+        }
       } catch (e) {
         console.error(e);
       }
-    }
+    };
+    fetchBank();
   }, []);
 
   const handleDeposit = async () => {
@@ -345,18 +349,27 @@ export default function WalletPage() {
                   Cancel
                 </button>
                 <button 
-                  onClick={() => {
+                  onClick={async () => {
                     if (!bankName || !accountNumber || !accountName) return;
-                    const data = { bankName, bankCode, accountNumber, accountName };
-                    localStorage.setItem("vouchit_bank", JSON.stringify(data));
-                    setBankAccount(data);
-                    setShowBankModal(false);
-                    import("sonner").then(({ toast }) => toast.success("Bank account linked successfully!"));
+                    setIsResolving(true);
+                    try {
+                      const { walletApi } = await import("@/lib/api");
+                      const data = { bankName, bankCode, accountNumber, accountName };
+                      await walletApi.linkBank(data);
+                      setBankAccount(data);
+                      setShowBankModal(false);
+                      const { toast } = await import("sonner");
+                      toast.success("Bank account linked successfully!");
+                    } catch (err: any) {
+                      setResolutionError(err.message || "Failed to link bank account");
+                    } finally {
+                      setIsResolving(false);
+                    }
                   }}
                   disabled={!bankName || accountNumber.length !== 10 || !accountName || isResolving}
                   className="flex-1 py-3 font-semibold bg-[var(--primary)] text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center"
                 >
-                  Link Account
+                  {isResolving ? <Loader2 className="h-5 w-5 animate-spin" /> : "Link Account"}
                 </button>
               </div>
             </div>
@@ -464,13 +477,20 @@ export default function WalletPage() {
               </div>
               {bankAccount ? (
                 <button 
-                  onClick={() => {
-                    localStorage.removeItem("vouchit_bank");
-                    setBankAccount(null);
-                    setBankName("");
-                    setAccountNumber("");
-                    setAccountName("");
-                    import("sonner").then(({ toast }) => toast.success("Bank account unlinked successfully!"));
+                  onClick={async () => {
+                    try {
+                      const { walletApi } = await import("@/lib/api");
+                      await walletApi.unlinkBank();
+                      setBankAccount(null);
+                      setBankName("");
+                      setAccountNumber("");
+                      setAccountName("");
+                      const { toast } = await import("sonner");
+                      toast.success("Bank account unlinked successfully!");
+                    } catch (e: any) {
+                      const { toast } = await import("sonner");
+                      toast.error("Failed to unlink bank account");
+                    }
                   }}
                   className="text-red-500 flex items-center gap-1 text-xs font-semibold hover:underline"
                 >

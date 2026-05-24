@@ -73,6 +73,10 @@ export const walletApi = {
     fetchApi('/wallet/withdraw', { method: 'POST', body: JSON.stringify({ amount }) }),
   resolveBank: (accountNumber: string, bankCode: string) =>
     fetchApi(`/wallet/bank/resolve?accountNumber=${accountNumber}&bankCode=${bankCode}`),
+  linkBank: (data: { bankCode: string, bankName: string, accountNumber: string, accountName: string }) =>
+    fetchApi('/wallet/bank', { method: 'POST', body: JSON.stringify(data) }),
+  getLinkedBank: () => fetchApi('/wallet/bank'),
+  unlinkBank: () => fetchApi('/wallet/bank', { method: 'DELETE' }),
 };
 
 export const disputesApi = {
