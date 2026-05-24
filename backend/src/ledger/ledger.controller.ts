@@ -31,8 +31,8 @@ export class LedgerController {
   }
 
   @Post('withdraw')
-  async simulateWithdrawal(@Request() req: any, @Body() body: { amount: number }) {
-    return this.ledgerService.simulateWithdrawal(req.user.userId, body.amount);
+  async processWithdrawal(@Request() req: any, @Body() body: { amount: number }) {
+    return this.ledgerService.processWithdrawal(req.user.userId, body.amount);
   }
 
   @Get('bank/resolve')

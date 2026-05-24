@@ -138,8 +138,7 @@ export class LedgerService {
     }
   }
 
-  // Keep for simple manual tests, or if we need standard withdrawal later
-  async simulateWithdrawal(userId: string, amount: number) {
+  async processWithdrawal(userId: string, amount: number) {
     if (amount <= 0) throw new BadRequestException('Amount must be positive');
 
     const bankAccount = await this.prisma.bankAccount.findUnique({ where: { userId } });
@@ -153,19 +152,83 @@ export class LedgerService {
       throw new BadRequestException('Insufficient available balance');
     }
 
-    const updatedWallet = await this.prisma.wallet.update({
-      where: { userId },
-      data: {
-        availableBalance: Number(wallet.availableBalance) - amount,
-        ledgerEntries: {
-          create: {
-            amount: -amount,
-            type: 'WITHDRAWAL',
-            description: 'Simulated Bank Withdrawal'
-          }
+    const secretKey = process.env.PAYSTACK_SECRET_KEY;
+    if (!secretKey) {
+      throw new InternalServerErrorException('Paystack Secret Key is missing');
+    }
+
+    let recipientCode = '';
+    try {
+      const recipientResponse = await axios.post(
+        'https://api.paystack.co/transferrecipient',
+        {
+          type: 'nuban',
+          name: bankAccount.accountName,
+          account_number: bankAccount.accountNumber,
+          bank_code: bankAccount.bankCode,
+          currency: 'NGN',
+        },
+        {
+          headers: { Authorization: `Bearer ${secretKey}` },
         }
-      },
-      include: { ledgerEntries: { orderBy: { createdAt: 'desc' }, take: 1 } }
+      );
+      
+      recipientCode = recipientResponse.data.data.recipient_code;
+    } catch (error: any) {
+      throw new BadRequestException(
+        error.response?.data?.message || 'Could not verify recipient with Paystack'
+      );
+    }
+
+    let transferData;
+    try {
+      const transferResponse = await axios.post(
+        'https://api.paystack.co/transfer',
+        {
+          source: 'balance',
+          amount: amount * 100, // Paystack uses kobo
+          recipient: recipientCode,
+          reason: 'Withdrawal from Vouchit',
+        },
+        {
+          headers: { Authorization: `Bearer ${secretKey}` },
+        }
+      );
+      transferData = transferResponse.data.data;
+    } catch (error: any) {
+      throw new BadRequestException(
+        error.response?.data?.message || 'Failed to initiate transfer via Paystack'
+      );
+    }
+
+    const updatedWallet = await this.prisma.$transaction(async (tx) => {
+      // Create Transaction
+      const transaction = await tx.transaction.create({
+        data: {
+          reference: transferData.reference,
+          status: transferData.status === 'success' ? 'SUCCESS' : 'PENDING',
+          type: 'WITHDRAWAL',
+          metadata: { userId, amount, transferCode: transferData.transfer_code },
+        },
+      });
+
+      // Debit wallet and create ledger entry
+      const walletRecord = await tx.wallet.update({
+        where: { userId },
+        data: {
+          availableBalance: Number(wallet.availableBalance) - amount,
+          ledgerEntries: {
+            create: {
+              transactionId: transaction.id,
+              amount: -amount,
+              type: 'WITHDRAWAL',
+              description: 'Bank Transfer Withdrawal',
+            },
+          },
+        },
+        include: { ledgerEntries: { orderBy: { createdAt: 'desc' }, take: 1 } },
+      });
+      return walletRecord;
     });
 
     return updatedWallet;
