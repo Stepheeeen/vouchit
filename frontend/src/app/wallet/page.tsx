@@ -154,7 +154,7 @@ export default function WalletPage() {
       setWithdrawAmount("");
       setShowWithdrawModal(false);
       const { toast } = await import("sonner");
-      toast.success(`Withdrawal request of ₦${amount.toLocaleString()} submitted successfully!`);
+      toast.success(`Withdrawal of ₦${amount.toLocaleString()} submitted! It may take a few minutes to arrive.`);
       await loadWallet();
     } catch (e: any) {
       setWithdrawError(e.message || "Failed to process withdrawal.");
@@ -246,16 +246,29 @@ export default function WalletPage() {
             <div className="flex flex-col gap-4">
               <div>
                 <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Amount (NGN)</label>
-                <input 
-                  type="number"
-                  value={withdrawAmount}
-                  onChange={(e) => {
-                    setWithdrawAmount(e.target.value);
-                    setWithdrawError("");
-                  }}
-                  placeholder="e.g. 5000"
-                  className="w-full mt-1 p-3 border border-[var(--border)] rounded-xl font-semibold text-lg"
-                />
+                <div className="relative mt-1">
+                  <input 
+                    type="number"
+                    value={withdrawAmount}
+                    onChange={(e) => {
+                      setWithdrawAmount(e.target.value);
+                      setWithdrawError("");
+                    }}
+                    placeholder="e.g. 5000"
+                    className="w-full p-3 border border-[var(--border)] rounded-xl font-semibold text-lg pr-16"
+                  />
+                  <button
+                    onClick={() => {
+                      if (wallet?.availableBalance) {
+                        setWithdrawAmount(wallet.availableBalance.toString());
+                        setWithdrawError("");
+                      }
+                    }}
+                    className="absolute right-2 top-2 bottom-2 px-3 text-xs font-bold text-[var(--primary)] bg-[var(--primary)]/10 hover:bg-[var(--primary)]/20 rounded-lg transition-colors"
+                  >
+                    MAX
+                  </button>
+                </div>
                 <p className="text-[10px] text-[var(--muted-foreground)] mt-1">
                   Available: {formatMoney(wallet?.availableBalance || 0)}
                 </p>

@@ -196,9 +196,11 @@ export class LedgerService {
       );
       transferData = transferResponse.data.data;
     } catch (error: any) {
-      throw new BadRequestException(
-        error.response?.data?.message || 'Failed to initiate transfer via Paystack'
-      );
+      const errorMessage = error.response?.data?.message || 'Failed to initiate transfer via Paystack';
+      if (errorMessage.toLowerCase().includes('balance is not enough')) {
+        throw new BadRequestException('Withdrawals are temporarily delayed. Please contact support or try again later.');
+      }
+      throw new BadRequestException(errorMessage);
     }
 
     const updatedWallet = await this.prisma.$transaction(async (tx) => {
@@ -222,7 +224,7 @@ export class LedgerService {
               transactionId: transaction.id,
               amount: -amount,
               type: 'WITHDRAWAL',
-              description: 'Bank Transfer Withdrawal',
+              description: `Withdrawal to ${bankAccount.bankName} (****${bankAccount.accountNumber.slice(-4)})`,
             },
           },
         },
