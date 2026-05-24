@@ -148,7 +148,21 @@ export class LedgerService {
 
     const wallet = await this.getWallet(userId);
 
-    if (Number(wallet.availableBalance) < amount) {
+    if (amount < 1000) {
+      throw new BadRequestException('Minimum withdrawal amount is ₦1,000');
+    }
+
+    const fee = Math.ceil(amount * 0.02);
+    let transferAmount = 0;
+    let totalDeduction = 0;
+
+    if (Number(wallet.availableBalance) >= amount + fee) {
+      transferAmount = amount;
+      totalDeduction = amount + fee;
+    } else if (Number(wallet.availableBalance) >= amount) {
+      transferAmount = amount - fee;
+      totalDeduction = amount;
+    } else {
       throw new BadRequestException('Insufficient available balance');
     }
 
@@ -186,7 +200,7 @@ export class LedgerService {
         'https://api.paystack.co/transfer',
         {
           source: 'balance',
-          amount: amount * 100, // Paystack uses kobo
+          amount: transferAmount * 100, // Paystack uses kobo
           recipient: recipientCode,
           reason: 'Withdrawal from Vouchit',
         },
@@ -210,25 +224,33 @@ export class LedgerService {
           reference: transferData.reference,
           status: transferData.status === 'success' ? 'SUCCESS' : 'PENDING',
           type: 'WITHDRAWAL',
-          metadata: { userId, amount, transferCode: transferData.transfer_code },
+          metadata: { userId, originalAmount: amount, transferAmount, fee, transferCode: transferData.transfer_code },
         },
       });
 
-      // Debit wallet and create ledger entry
+      // Debit wallet and create ledger entries
       const walletRecord = await tx.wallet.update({
         where: { userId },
         data: {
-          availableBalance: Number(wallet.availableBalance) - amount,
+          availableBalance: Number(wallet.availableBalance) - totalDeduction,
           ledgerEntries: {
-            create: {
-              transactionId: transaction.id,
-              amount: -amount,
-              type: 'WITHDRAWAL',
-              description: `Withdrawal to ${bankAccount.bankName} (****${bankAccount.accountNumber.slice(-4)})`,
-            },
+            create: [
+              {
+                transactionId: transaction.id,
+                amount: -transferAmount,
+                type: 'WITHDRAWAL',
+                description: `Withdrawal to ${bankAccount.bankName} (****${bankAccount.accountNumber.slice(-4)})`,
+              },
+              {
+                transactionId: transaction.id,
+                amount: -fee,
+                type: 'FEE',
+                description: 'Withdrawal Processing Fee (2%)',
+              }
+            ],
           },
         },
-        include: { ledgerEntries: { orderBy: { createdAt: 'desc' }, take: 1 } },
+        include: { ledgerEntries: { orderBy: { createdAt: 'desc' }, take: 2 } },
       });
       return walletRecord;
     });

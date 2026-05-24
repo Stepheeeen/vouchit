@@ -269,9 +269,19 @@ export default function WalletPage() {
                     MAX
                   </button>
                 </div>
-                <p className="text-[10px] text-[var(--muted-foreground)] mt-1">
-                  Available: {formatMoney(wallet?.availableBalance || 0)}
-                </p>
+                <div className="flex justify-between items-center mt-1">
+                  <p className="text-[10px] text-[var(--muted-foreground)]">
+                    Available: {formatMoney(wallet?.availableBalance || 0)}
+                  </p>
+                  {Number(withdrawAmount) >= 1000 && (
+                    <p className="text-[10px] font-medium text-[var(--muted-foreground)] text-right">
+                      {Number(wallet?.availableBalance) >= Number(withdrawAmount) + Math.ceil(Number(withdrawAmount) * 0.02)
+                        ? `Fee: ₦${Math.ceil(Number(withdrawAmount) * 0.02)} | You Receive: ₦${Number(withdrawAmount)}`
+                        : `Fee: ₦${Math.ceil(Number(withdrawAmount) * 0.02)} | You Receive: ₦${Number(withdrawAmount) - Math.ceil(Number(withdrawAmount) * 0.02)}`
+                      }
+                    </p>
+                  )}
+                </div>
               </div>
               <div className="flex gap-3">
                 <button 
@@ -283,7 +293,7 @@ export default function WalletPage() {
                 </button>
                 <button 
                   onClick={handleWithdraw}
-                  disabled={isWithdrawing || !withdrawAmount || Number(withdrawAmount) <= 0 || Number(withdrawAmount) > (wallet?.availableBalance || 0)}
+                  disabled={isWithdrawing || !withdrawAmount || Number(withdrawAmount) < 1000 || Number(withdrawAmount) > (wallet?.availableBalance || 0)}
                   className="flex-1 py-3 font-semibold bg-[var(--primary)] text-white rounded-xl disabled:opacity-50 flex justify-center items-center"
                 >
                   {isWithdrawing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Withdraw"}
