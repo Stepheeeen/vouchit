@@ -9,6 +9,7 @@ import {
   Trash2, AlertTriangle, Camera, Loader2
 } from "lucide-react";
 import Cookies from "js-cookie";
+import { NIGERIAN_BANKS } from "../wallet/page";
 
 function Toggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) {
   return (
@@ -94,12 +95,78 @@ export default function SettingsPage() {
   const [publicProfile, setPublicProfile] = useState(true);
   const [showOnLeaderboard, setShowOnLeaderboard] = useState(true);
 
+  // Bank Account State
+  const [bankAccount, setBankAccount] = useState<{ accountName: string; accountNumber: string; bankName: string; bankCode?: string } | null>(null);
+  const [showBankModal, setShowBankModal] = useState(false);
+  const [bankName, setBankName] = useState("");
+  const [bankCode, setBankCode] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [accountName, setAccountName] = useState("");
+  const [isResolving, setIsResolving] = useState(false);
+  const [resolutionError, setResolutionError] = useState("");
+
+  // KYC Verification State
+  const [showKycModal, setShowKycModal] = useState(false);
+  const [kycType, setKycType] = useState<"BVN" | "NIN">("BVN");
+  const [kycNumber, setKycNumber] = useState("");
+  const [isVerifyingKyc, setIsVerifyingKyc] = useState(false);
+  const [kycError, setKycError] = useState("");
+
+  useEffect(() => {
+    const resolve = async () => {
+      if (accountNumber.length === 10 && bankCode) {
+        setIsResolving(true);
+        setResolutionError("");
+        setAccountName("");
+        try {
+          const { walletApi } = await import("@/lib/api");
+          const res = await walletApi.resolveBank(accountNumber, bankCode);
+          setAccountName(res.accountName);
+        } catch (err: any) {
+          setResolutionError(err.message || "Failed to resolve bank account.");
+        } finally {
+          setIsResolving(false);
+        }
+      } else {
+        setAccountName("");
+        setResolutionError("");
+      }
+    };
+    resolve();
+  }, [accountNumber, bankCode]);
+
+  useEffect(() => {
+    if (!showBankModal) {
+      setBankName("");
+      setBankCode("");
+      setAccountNumber("");
+      setAccountName("");
+      setResolutionError("");
+    }
+  }, [showBankModal]);
+
+  useEffect(() => {
+    if (!showKycModal) {
+      setKycNumber("");
+      setKycError("");
+    }
+  }, [showKycModal]);
+
   useEffect(() => {
     const load = async () => {
       try {
         const { userApi } = await import("@/lib/api");
         const profile = await userApi.getProfile();
         setUser(profile);
+
+        const storedBank = localStorage.getItem("vouchit_bank");
+        if (storedBank) {
+          try {
+            setBankAccount(JSON.parse(storedBank));
+          } catch (e) {
+            console.error(e);
+          }
+        }
         setName(profile.displayName || "");
         setEmail(profile.email || "");
         setPhone(profile.phone || "");
@@ -134,9 +201,13 @@ export default function SettingsPage() {
       const { userApi } = await import("@/lib/api");
       await userApi.updateProfile({ displayName: name, phone, bio });
       setSaved(true);
+      const { toast } = await import("sonner");
+      toast.success("Profile updated successfully!");
       setTimeout(() => setSaved(false), 2500);
     } catch (err: any) {
       setProfileError(err.message || "Failed to update profile.");
+      const { toast } = await import("sonner");
+      toast.error(err.message || "Failed to update profile.");
     } finally {
       setSavingProfile(false);
     }
@@ -157,9 +228,13 @@ export default function SettingsPage() {
       setCurrentPassword("");
       setNewPassword("");
       setConfirmPassword("");
+      const { toast } = await import("sonner");
+      toast.success("Password changed successfully!");
       setTimeout(() => setPasswordSaved(false), 2500);
     } catch (err: any) {
       setPasswordError(err.message || "Failed to change password.");
+      const { toast } = await import("sonner");
+      toast.error(err.message || "Failed to change password.");
     } finally {
       setSavingPassword(false);
     }
@@ -304,7 +379,7 @@ export default function SettingsPage() {
                           value={phone}
                           onChange={e => setPhone(e.target.value)}
                           placeholder="e.g. +2348012345678"
-                          className="w-full px-4 py-2.5 text-sm bg-white focus:outline-none"
+                          className="w-full pl-4 pr-10 py-2.5 text-sm bg-white focus:outline-none"
                         />
                         <button
                           onClick={() => setShowPhone(!showPhone)}
@@ -509,12 +584,46 @@ export default function SettingsPage() {
               <div className="flex flex-col gap-4">
                 <div className="bg-white border border-[var(--border)] rounded-2xl p-6" style={{ boxShadow: "var(--shadow-sm)" }}>
                   <SectionHeader icon={CreditCard} title="Payment Methods" subtitle="Manage your linked bank accounts." />
-                  <div className="flex flex-col gap-3 mb-4">
-                    <p className="text-sm text-[var(--muted-foreground)]">Integration with Paystack coming soon.</p>
-                  </div>
-                  <button disabled className="w-full py-3 rounded-xl border-2 border-dashed border-[var(--border)] text-sm font-semibold text-[var(--muted-foreground)] hover:border-[var(--primary)] hover:text-[var(--primary)] transition-colors flex items-center justify-center gap-2 opacity-50 cursor-not-allowed">
-                    + Add New Bank Account
-                  </button>
+                  {bankAccount ? (
+                    <div className="flex flex-col gap-4 mb-4">
+                      <div className="p-4 border border-[var(--border)] rounded-2xl bg-neutral-50 flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-xl bg-[var(--primary)]/10 text-[var(--primary)] flex items-center justify-center font-bold text-lg">
+                            🏦
+                          </div>
+                          <div>
+                            <p className="text-sm font-bold text-[var(--foreground)]">{bankAccount.bankName}</p>
+                            <p className="text-xs text-[var(--muted-foreground)]">
+                              {bankAccount.accountNumber} · {bankAccount.accountName}
+                            </p>
+                          </div>
+                        </div>
+                        <button 
+                          onClick={() => {
+                            localStorage.removeItem("vouchit_bank");
+                            setBankAccount(null);
+                            import("sonner").then(({ toast }) => toast.success("Bank account unlinked."));
+                          }}
+                          className="text-xs font-semibold text-[var(--danger)] hover:bg-[var(--danger)]/5 border border-[var(--danger)]/20 px-3 py-1.5 rounded-xl transition-colors cursor-pointer"
+                        >
+                          Unlink
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-3 mb-4">
+                      <p className="text-sm text-[var(--muted-foreground)]">No bank account linked. Link your account to withdraw funds.</p>
+                    </div>
+                  )}
+
+                  {!bankAccount && (
+                    <button 
+                      onClick={() => setShowBankModal(true)}
+                      className="w-full py-3 rounded-xl border-2 border-dashed border-[var(--border)] text-sm font-semibold text-[var(--muted-foreground)] hover:border-[var(--primary)] hover:text-[var(--primary)] transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      + Link Bank Account
+                    </button>
+                  )}
                 </div>
 
                 <div className="bg-white border border-[var(--border)] rounded-2xl p-6" style={{ boxShadow: "var(--shadow-sm)" }}>
@@ -575,9 +684,23 @@ export default function SettingsPage() {
                     <span className="text-xs font-semibold text-[var(--success)] bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">Active</span>
                   </SettingRow>
                   <SettingRow label="KYC Verification" sub="Identity verification status">
-                    <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
-                      {user.kycTier > 0 ? "Verified" : "Pending"}
-                    </span>
+                    <div className="flex items-center gap-2">
+                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
+                        user.kycTier > 0 
+                          ? "text-emerald-700 bg-emerald-50 border-emerald-200" 
+                          : "text-amber-700 bg-amber-50 border-amber-200"
+                      }`}>
+                        {user.kycTier > 0 ? "Verified" : "Not Verified"}
+                      </span>
+                      {user.kycTier === 0 && (
+                        <button 
+                          onClick={() => setShowKycModal(true)}
+                          className="text-xs font-semibold bg-[var(--primary)] text-white px-3 py-1.5 rounded-xl hover:opacity-90 transition-opacity cursor-pointer"
+                        >
+                          Verify Now
+                        </button>
+                      )}
+                    </div>
                   </SettingRow>
                 </div>
 
@@ -605,23 +728,202 @@ export default function SettingsPage() {
                       <p className="text-xs text-[var(--muted-foreground)]">These actions are permanent and cannot be undone.</p>
                     </div>
                   </div>
-                  <div className="flex flex-col gap-3">
-                    <button className="w-full flex items-center justify-between p-4 rounded-xl border border-[var(--danger)]/30 bg-white text-sm font-semibold text-[var(--danger)] hover:bg-[var(--danger)]/5 transition-colors">
+                    <button 
+                      onClick={() => {
+                        import("sonner").then(({ toast }) => toast.info("Freezing accounts is disabled in demo mode. Contact support at support@usevouchit.com."));
+                      }}
+                      className="w-full flex items-center justify-between p-4 rounded-xl border border-[var(--danger)]/30 bg-white text-sm font-semibold text-[var(--danger)] hover:bg-[var(--danger)]/5 transition-colors">
                       <span className="flex items-center gap-2"><Lock className="h-4 w-4" /> Freeze Account Temporarily</span>
                       <ChevronRight className="h-4 w-4" />
                     </button>
-                    <button className="w-full flex items-center justify-between p-4 rounded-xl border border-[var(--danger)]/30 bg-white text-sm font-semibold text-[var(--danger)] hover:bg-[var(--danger)]/5 transition-colors">
+                    <button 
+                      onClick={() => {
+                        import("sonner").then(({ toast }) => toast.error("Account deletion requires admin validation. Please submit a request to support@usevouchit.com."));
+                      }}
+                      className="w-full flex items-center justify-between p-4 rounded-xl border border-[var(--danger)]/30 bg-white text-sm font-semibold text-[var(--danger)] hover:bg-[var(--danger)]/5 transition-colors">
                       <span className="flex items-center gap-2"><Trash2 className="h-4 w-4" /> Delete Account</span>
                       <ChevronRight className="h-4 w-4" />
                     </button>
                   </div>
                 </div>
-              </div>
             )}
 
           </div>
         </div>
       </main>
+
+      {/* Link Bank Account Modal */}
+      {showBankModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-2">Link Bank Account</h2>
+            <p className="text-xs text-[var(--muted-foreground)] mb-4">
+              Enter your bank details to link your account for withdrawals.
+            </p>
+            <div className="flex flex-col gap-4">
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Select Bank</label>
+                <select
+                  value={bankCode}
+                  onChange={(e) => {
+                    const code = e.target.value;
+                    setBankCode(code);
+                    const selected = NIGERIAN_BANKS.find(b => b.code === code);
+                    setBankName(selected ? selected.name : "");
+                  }}
+                  className="w-full mt-1 p-3 border border-[var(--border)] rounded-xl font-semibold text-sm bg-white"
+                >
+                  <option value="">Select a Bank</option>
+                  {NIGERIAN_BANKS.map((b) => (
+                    <option key={b.code} value={b.code}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Account Number</label>
+                <input 
+                  type="text"
+                  maxLength={10}
+                  value={accountNumber}
+                  onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ""))}
+                  placeholder="e.g. 0123456789"
+                  className="w-full mt-1 p-3 border border-[var(--border)] rounded-xl font-semibold text-sm"
+                />
+                {isResolving && (
+                  <p className="text-xs text-[var(--primary)] flex items-center gap-1.5 mt-1 font-semibold">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Verifying account details...
+                  </p>
+                )}
+                {resolutionError && (
+                  <p className="text-xs text-[var(--danger)] mt-1 font-semibold">
+                    {resolutionError}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Account Name</label>
+                <input 
+                  type="text"
+                  value={accountName}
+                  readOnly
+                  placeholder={isResolving ? "Resolving account name..." : "Account name will auto-resolve"}
+                  className="w-full mt-1 p-3 border border-[var(--border)] rounded-xl font-semibold text-sm bg-neutral-50 text-neutral-500 cursor-not-allowed"
+                />
+              </div>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setShowBankModal(false)}
+                  className="flex-1 py-3 font-semibold border border-[var(--border)] rounded-xl text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => {
+                    if (!bankName || !accountNumber || !accountName) return;
+                    const data = { bankName, bankCode, accountNumber, accountName };
+                    localStorage.setItem("vouchit_bank", JSON.stringify(data));
+                    setBankAccount(data);
+                    setShowBankModal(false);
+                    import("sonner").then(({ toast }) => toast.success("Bank account linked successfully!"));
+                  }}
+                  disabled={!bankName || accountNumber.length !== 10 || !accountName || isResolving}
+                  className="flex-1 py-3 font-semibold bg-[var(--primary)] text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center"
+                >
+                  Link Account
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* KYC Verification Modal */}
+      {showKycModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-2">Verify Identity</h2>
+            <p className="text-xs text-[var(--muted-foreground)] mb-4">
+              Enter your Bank Verification Number (BVN) or National Identification Number (NIN) to upgrade your account tier.
+            </p>
+            {kycError && (
+              <div className="mb-4 p-3 border border-[var(--danger)]/30 bg-red-50 text-red-700 text-xs font-semibold rounded-xl">
+                {kycError}
+              </div>
+            )}
+            <div className="flex flex-col gap-4">
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">ID Type</label>
+                <div className="flex gap-2 mt-1">
+                  {(["BVN", "NIN"] as const).map((t) => (
+                    <button
+                      key={t}
+                      type="button"
+                      onClick={() => setKycType(t)}
+                      className={`flex-1 py-2 text-sm font-semibold rounded-xl border transition-colors ${
+                        kycType === t
+                          ? "bg-[var(--primary)]/10 text-[var(--primary)] border-[var(--primary)]"
+                          : "border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+                      }`}
+                    >
+                      {t}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">
+                  {kycType} Number (11 Digits)
+                </label>
+                <input 
+                  type="text"
+                  maxLength={11}
+                  value={kycNumber}
+                  onChange={(e) => setKycNumber(e.target.value.replace(/\D/g, ""))}
+                  placeholder={`Enter your 11-digit ${kycType}`}
+                  className="w-full mt-1 p-3 border border-[var(--border)] rounded-xl font-semibold text-sm"
+                />
+              </div>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setShowKycModal(false)}
+                  className="flex-1 py-3 font-semibold border border-[var(--border)] rounded-xl text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+                  disabled={isVerifyingKyc}
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={async () => {
+                    if (kycNumber.length !== 11) {
+                      setKycError("Identification number must be exactly 11 digits.");
+                      return;
+                    }
+                    setIsVerifyingKyc(true);
+                    setKycError("");
+                    try {
+                      const { userApi } = await import("@/lib/api");
+                      const res = await userApi.verifyKYC(kycType, kycNumber);
+                      setUser(res.user);
+                      setShowKycModal(false);
+                      const { toast } = await import("sonner");
+                      toast.success(`${kycType} verified successfully! Your account status is now verified.`);
+                    } catch (err: any) {
+                      setKycError(err.message || "KYC verification failed. Please check the number.");
+                    } finally {
+                      setIsVerifyingKyc(false);
+                    }
+                  }}
+                  disabled={isVerifyingKyc || kycNumber.length !== 11}
+                  className="flex-1 py-3 font-semibold bg-[var(--primary)] text-white rounded-xl disabled:opacity-50 flex justify-center items-center"
+                >
+                  {isVerifyingKyc ? <Loader2 className="h-5 w-5 animate-spin" /> : "Verify Identity"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

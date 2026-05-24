@@ -73,6 +73,7 @@ model Wager {
   totalPot    Float    @default(0.00)
   status      String   // 'PENDING_FUNDING', 'ACTIVE', 'SETTLED', 'DISPUTED', 'CANCELLED', 'EXPIRED'
   winnerId    String?  @db.ObjectId // Set when settled
+  isSymmetric Boolean  @default(true)
   expiresAt   DateTime
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt

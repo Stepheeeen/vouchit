@@ -94,4 +94,31 @@ export class UsersService {
 
     return leaders;
   }
+
+  async verifyKYC(userId: string, type: 'BVN' | 'NIN', number: string) {
+    if (!type || !['BVN', 'NIN'].includes(type)) {
+      throw new BadRequestException('Verification type must be BVN or NIN');
+    }
+    if (!number || number.length !== 11 || !/^\d+$/.test(number)) {
+      throw new BadRequestException('BVN or NIN must be exactly 11 digits');
+    }
+
+    if (number === '00000000000') {
+      throw new BadRequestException('Invalid identification number. Verification failed.');
+    }
+
+    const updatedUser = await this.prisma.user.update({
+      where: { id: userId },
+      data: { kycTier: 1 },
+      include: { wallet: true },
+    });
+
+    return {
+      success: true,
+      message: `${type} verified successfully`,
+      kycTier: updatedUser.kycTier,
+      user: updatedUser,
+    };
+  }
 }
+

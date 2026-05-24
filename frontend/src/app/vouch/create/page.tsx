@@ -29,10 +29,12 @@ export default function CreateVouchPage() {
 
     try {
       const { wagersApi } = await import("@/lib/api");
-      const wager = await wagersApi.create(description, Number(stake));
+      const wager = await wagersApi.create(description, Number(stake), isSymmetric, Number(expiryDays));
       router.push(`/vouch/${wager.id}/invite`);
     } catch (err: any) {
       setError(err.message || "Failed to create wager. Please try again.");
+      const { toast } = await import("sonner");
+      toast.error(err.message || "Failed to create wager. Please try again.");
     } finally {
       setIsLoading(false);
     }

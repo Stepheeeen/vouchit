@@ -5,7 +5,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
   Plus, Users, ArrowUpRight, ArrowDownRight,
-  Flame, TrendingUp, ChevronRight, ShieldCheck, Clock, Loader2
+  Flame, TrendingUp, ChevronRight, Clock, Loader2
 } from "lucide-react";
 
 const quickActions = [
@@ -107,8 +107,8 @@ export default function Home() {
           >
             <div className="absolute -top-10 -right-10 h-48 w-48 rounded-full bg-white/10" />
             <div className="absolute -bottom-14 -right-4 h-40 w-40 rounded-full bg-white/5" />
-            <div className="absolute top-4 right-4 opacity-10">
-              <ShieldCheck className="h-32 w-32 text-white" />
+            <div className="absolute top-4 right-4 opacity-10 select-none pointer-events-none">
+              <img src="/logo-mark-transparent.png" alt="watermark" className="h-32 w-32 object-contain" />
             </div>
 
             <div className="relative z-10">

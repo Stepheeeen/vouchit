@@ -16,6 +16,7 @@ export default function DisputePage() {
   const [additionalDetail, setAdditionalDetail] = useState("");
   const [proofType, setProofType] = useState<string | null>(null);
   const [mediaUrl, setMediaUrl] = useState("");
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
@@ -41,6 +42,8 @@ export default function DisputePage() {
       setTimeout(() => router.push(`/vouch/${id}`), 2500);
     } catch (err: any) {
       setError(err.message || "Failed to file dispute. Please try again.");
+      const { toast } = await import("sonner");
+      toast.error(err.message || "Failed to file dispute. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
@@ -177,7 +180,12 @@ export default function DisputePage() {
               ].map((opt) => (
                 <button
                   key={opt.type}
-                  onClick={() => setProofType(proofType === opt.type ? null : opt.type)}
+                  onClick={() => {
+                    const nextType = proofType === opt.type ? null : opt.type;
+                    setProofType(nextType);
+                    setSelectedFile(null);
+                    setMediaUrl("");
+                  }}
                   className={`flex flex-col items-center gap-2 p-4 rounded-2xl border-2 transition-all ${
                     proofType === opt.type
                       ? "border-[var(--primary)] bg-[var(--muted)]"
@@ -192,13 +200,55 @@ export default function DisputePage() {
               ))}
             </div>
             {(proofType === "screenshot" || proofType === "document") && (
-              <div className="border-2 border-dashed border-[var(--border)] rounded-2xl p-8 flex flex-col items-center gap-3 text-center bg-[var(--muted)] hover:border-[var(--primary)] transition-colors cursor-pointer">
-                <div className="h-12 w-12 rounded-2xl bg-[var(--primary)]/10 flex items-center justify-center">
-                  <Upload className="h-6 w-6 text-[var(--primary)]" />
+              selectedFile ? (
+                <div className="border border-[var(--border)] rounded-2xl p-6 flex items-center justify-between bg-white w-full">
+                  <div className="flex items-center gap-3">
+                    <div className="h-10 w-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center shrink-0">
+                      <CheckCircle2 className="h-5 w-5 text-[var(--success)]" />
+                    </div>
+                    <div className="min-w-0">
+                      <p className="text-sm font-semibold text-[var(--foreground)] truncate max-w-[200px]">{selectedFile.name}</p>
+                      <p className="text-xs text-[var(--muted-foreground)]">{(selectedFile.size / 1024 / 1024).toFixed(2)} MB</p>
+                    </div>
+                  </div>
+                  <button 
+                    type="button"
+                    onClick={() => {
+                      setSelectedFile(null);
+                      setMediaUrl("");
+                    }}
+                    className="text-xs font-semibold text-[var(--danger)] hover:underline shrink-0"
+                  >
+                    Remove
+                  </button>
                 </div>
-                <p className="text-sm font-semibold text-[var(--foreground)]">Drop file here or tap to browse</p>
-                <p className="text-xs text-[var(--muted-foreground)]">PNG, JPG, PDF — up to 10MB</p>
-              </div>
+              ) : (
+                <div 
+                  onClick={() => document.getElementById("file-input")?.click()}
+                  className="border-2 border-dashed border-[var(--border)] rounded-2xl p-8 flex flex-col items-center gap-3 text-center bg-[var(--muted)] hover:border-[var(--primary)] transition-colors cursor-pointer w-full"
+                >
+                  <input 
+                    type="file" 
+                    id="file-input" 
+                    className="hidden" 
+                    accept={proofType === "screenshot" ? "image/*" : ".pdf,.doc,.docx,.txt"}
+                    onChange={(e) => {
+                      const file = e.target.files?.[0];
+                      if (file) {
+                        setSelectedFile(file);
+                        setMediaUrl(`https://vouchit-proofs.s3.amazonaws.com/proofs/${Date.now()}_${file.name}`);
+                      }
+                    }}
+                  />
+                  <div className="h-12 w-12 rounded-2xl bg-[var(--primary)]/10 flex items-center justify-center">
+                    <Upload className="h-6 w-6 text-[var(--primary)]" />
+                  </div>
+                  <p className="text-sm font-semibold text-[var(--foreground)]">Drop file here or tap to browse</p>
+                  <p className="text-xs text-[var(--muted-foreground)]">
+                    {proofType === "screenshot" ? "PNG, JPG, GIF" : "PDF, DOC, TXT"} — up to 10MB
+                  </p>
+                </div>
+              )
             )}
             {proofType === "link" && (
               <div className="flex flex-col gap-2">

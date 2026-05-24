@@ -4,6 +4,37 @@ import { useState, useEffect } from "react";
 import Link from "next/link";
 import { ArrowLeft, ArrowUpRight, ArrowDownRight, Plus, Shield, Copy, ExternalLink, Loader2 } from "lucide-react";
 
+export const NIGERIAN_BANKS = [
+  { name: "Access Bank", code: "044" },
+  { name: "Citibank", code: "023" },
+  { name: "Ecobank", code: "050" },
+  { name: "Fidelity Bank", code: "070" },
+  { name: "First Bank of Nigeria", code: "011" },
+  { name: "First City Monument Bank (FCMB)", code: "214" },
+  { name: "Guaranty Trust Bank (GTBank)", code: "058" },
+  { name: "Heritage Bank", code: "030" },
+  { name: "Keystone Bank", code: "082" },
+  { name: "Kuda Bank", code: "50211" },
+  { name: "Moniepoint MFB", code: "50515" },
+  { name: "OPay", code: "999992" },
+  { name: "PalmPay", code: "999991" },
+  { name: "Polaris Bank", code: "076" },
+  { name: "Providus Bank", code: "101" },
+  { name: "Rubies Bank", code: "125" },
+  { name: "Stanbic IBTC Bank", code: "221" },
+  { name: "Standard Chartered Bank", code: "068" },
+  { name: "Sterling Bank", code: "232" },
+  { name: "Suntrust Bank", code: "100" },
+  { name: "Taj Bank", code: "302" },
+  { name: "Titan Trust Bank", code: "102" },
+  { name: "Union Bank of Nigeria", code: "032" },
+  { name: "United Bank for Africa (UBA)", code: "033" },
+  { name: "Unity Bank", code: "215" },
+  { name: "VFD Microfinance Bank", code: "566" },
+  { name: "Wema Bank", code: "035" },
+  { name: "Zenith Bank", code: "057" }
+];
+
 export default function WalletPage() {
   const [tab, setTab] = useState<"all" | "in" | "out">("all");
   const [wallet, setWallet] = useState<any>(null);
@@ -11,10 +42,54 @@ export default function WalletPage() {
   const [depositAmount, setDepositAmount] = useState("");
   const [isDepositing, setIsDepositing] = useState(false);
   const [showDepositModal, setShowDepositModal] = useState(false);
+  const [depositError, setDepositError] = useState("");
   const [withdrawAmount, setWithdrawAmount] = useState("");
   const [isWithdrawing, setIsWithdrawing] = useState(false);
   const [showWithdrawModal, setShowWithdrawModal] = useState(false);
   const [withdrawError, setWithdrawError] = useState("");
+
+  const [bankAccount, setBankAccount] = useState<{ accountName: string; accountNumber: string; bankName: string; bankCode?: string } | null>(null);
+  const [showBankModal, setShowBankModal] = useState(false);
+  const [bankName, setBankName] = useState("");
+  const [bankCode, setBankCode] = useState("");
+  const [accountNumber, setAccountNumber] = useState("");
+  const [accountName, setAccountName] = useState("");
+  const [isResolving, setIsResolving] = useState(false);
+  const [resolutionError, setResolutionError] = useState("");
+
+  useEffect(() => {
+    const resolve = async () => {
+      if (accountNumber.length === 10 && bankCode) {
+        setIsResolving(true);
+        setResolutionError("");
+        setAccountName("");
+        try {
+          const { walletApi } = await import("@/lib/api");
+          const res = await walletApi.resolveBank(accountNumber, bankCode);
+          setAccountName(res.accountName);
+        } catch (err: any) {
+          setResolutionError(err.message || "Failed to resolve bank account details.");
+        } finally {
+          setIsResolving(false);
+        }
+      } else {
+        setAccountName("");
+        setResolutionError("");
+      }
+    };
+    resolve();
+  }, [accountNumber, bankCode]);
+
+  useEffect(() => {
+    if (!showBankModal) {
+      setBankName("");
+      setBankCode("");
+      setAccountNumber("");
+      setAccountName("");
+      setResolutionError("");
+    }
+  }, [showBankModal]);
+
 
   const loadWallet = async () => {
     try {
@@ -30,11 +105,20 @@ export default function WalletPage() {
 
   useEffect(() => {
     loadWallet();
+    const storedBank = localStorage.getItem("vouchit_bank");
+    if (storedBank) {
+      try {
+        setBankAccount(JSON.parse(storedBank));
+      } catch (e) {
+        console.error(e);
+      }
+    }
   }, []);
 
   const handleDeposit = async () => {
     if (!depositAmount || isNaN(Number(depositAmount))) return;
     setIsDepositing(true);
+    setDepositError("");
     try {
       const { walletApi } = await import("@/lib/api");
       const res = await walletApi.initializeDeposit(Number(depositAmount));
@@ -42,7 +126,7 @@ export default function WalletPage() {
         window.location.href = res.authorization_url;
       }
     } catch (e: any) {
-      alert(e.message || "Failed to initialize deposit");
+      setDepositError(e.message || "Failed to initialize deposit");
       setIsDepositing(false);
     }
   };
@@ -50,6 +134,10 @@ export default function WalletPage() {
   const handleWithdraw = async () => {
     const amount = Number(withdrawAmount);
     if (!withdrawAmount || isNaN(amount) || amount <= 0) return;
+    if (!bankAccount) {
+      setWithdrawError("Please link a bank account before making withdrawals.");
+      return;
+    }
     if (amount > (wallet?.availableBalance || 0)) {
       setWithdrawError("Amount exceeds available balance.");
       return;
@@ -61,6 +149,8 @@ export default function WalletPage() {
       await walletApi.withdraw(amount);
       setWithdrawAmount("");
       setShowWithdrawModal(false);
+      const { toast } = await import("sonner");
+      toast.success(`Withdrawal request of ₦${amount.toLocaleString()} submitted successfully!`);
       await loadWallet();
     } catch (e: any) {
       setWithdrawError(e.message || "Failed to process withdrawal.");
@@ -93,20 +183,31 @@ export default function WalletPage() {
         <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
           <div className="bg-white rounded-2xl p-6 w-full max-w-md">
             <h2 className="text-xl font-bold mb-4">Fund Wallet</h2>
+            {depositError && (
+              <div className="mb-4 p-3 border border-[var(--danger)]/30 bg-red-50 text-red-700 text-xs font-semibold rounded-xl">
+                {depositError}
+              </div>
+            )}
             <div className="flex flex-col gap-4">
               <div>
                 <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Amount (NGN)</label>
                 <input 
                   type="number"
                   value={depositAmount}
-                  onChange={(e) => setDepositAmount(e.target.value)}
+                  onChange={(e) => {
+                    setDepositAmount(e.target.value);
+                    setDepositError("");
+                  }}
                   placeholder="e.g. 5000"
                   className="w-full mt-1 p-3 border border-[var(--border)] rounded-xl font-semibold text-lg"
                 />
               </div>
               <div className="flex gap-3">
                 <button 
-                  onClick={() => setShowDepositModal(false)}
+                  onClick={() => {
+                    setShowDepositModal(false);
+                    setDepositError("");
+                  }}
                   className="flex-1 py-3 font-semibold border border-[var(--border)] rounded-xl text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
                   disabled={isDepositing}
                 >
@@ -169,6 +270,93 @@ export default function WalletPage() {
                   className="flex-1 py-3 font-semibold bg-[var(--primary)] text-white rounded-xl disabled:opacity-50 flex justify-center items-center"
                 >
                   {isWithdrawing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Withdraw"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Link Bank Account Modal */}
+      {showBankModal && (
+        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+            <h2 className="text-xl font-bold mb-2">Link Bank Account</h2>
+            <p className="text-xs text-[var(--muted-foreground)] mb-4">
+              Enter your bank details to link your account for withdrawals.
+            </p>
+            <div className="flex flex-col gap-4">
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Select Bank</label>
+                <select
+                  value={bankCode}
+                  onChange={(e) => {
+                    const code = e.target.value;
+                    setBankCode(code);
+                    const selected = NIGERIAN_BANKS.find(b => b.code === code);
+                    setBankName(selected ? selected.name : "");
+                  }}
+                  className="w-full mt-1 p-3 border border-[var(--border)] rounded-xl font-semibold text-sm bg-white"
+                >
+                  <option value="">Select a Bank</option>
+                  {NIGERIAN_BANKS.map((b) => (
+                    <option key={b.code} value={b.code}>
+                      {b.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Account Number</label>
+                <input 
+                  type="text"
+                  maxLength={10}
+                  value={accountNumber}
+                  onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ""))}
+                  placeholder="e.g. 0123456789"
+                  className="w-full mt-1 p-3 border border-[var(--border)] rounded-xl font-semibold text-sm"
+                />
+                {isResolving && (
+                  <p className="text-xs text-[var(--primary)] flex items-center gap-1.5 mt-1 font-semibold">
+                    <Loader2 className="h-3 w-3 animate-spin" /> Verifying account details...
+                  </p>
+                )}
+                {resolutionError && (
+                  <p className="text-xs text-[var(--danger)] mt-1 font-semibold">
+                    {resolutionError}
+                  </p>
+                )}
+              </div>
+              <div>
+                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Account Name</label>
+                <input 
+                  type="text"
+                  value={accountName}
+                  readOnly
+                  placeholder={isResolving ? "Resolving account name..." : "Account name will auto-resolve"}
+                  className="w-full mt-1 p-3 border border-[var(--border)] rounded-xl font-semibold text-sm bg-neutral-50 text-neutral-500 cursor-not-allowed"
+                />
+              </div>
+              <div className="flex gap-3">
+                <button 
+                  onClick={() => setShowBankModal(false)}
+                  className="flex-1 py-3 font-semibold border border-[var(--border)] rounded-xl text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
+                >
+                  Cancel
+                </button>
+                <button 
+                  onClick={() => {
+                    if (!bankName || !accountNumber || !accountName) return;
+                    const data = { bankName, bankCode, accountNumber, accountName };
+                    localStorage.setItem("vouchit_bank", JSON.stringify(data));
+                    setBankAccount(data);
+                    setShowBankModal(false);
+                    import("sonner").then(({ toast }) => toast.success("Bank account linked successfully!"));
+                  }}
+                  disabled={!bankName || accountNumber.length !== 10 || !accountName || isResolving}
+                  className="flex-1 py-3 font-semibold bg-[var(--primary)] text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center"
+                >
+                  Link Account
                 </button>
               </div>
             </div>
@@ -265,12 +453,37 @@ export default function WalletPage() {
                 </div>
                 <div>
                   <p className="text-xs text-[var(--muted-foreground)] font-semibold">Linked Account</p>
-                  <p className="font-semibold text-sm">None Linked</p>
+                  {bankAccount ? (
+                    <p className="font-semibold text-sm">
+                      {bankAccount.bankName} •••• {bankAccount.accountNumber.slice(-4)}
+                    </p>
+                  ) : (
+                    <p className="font-semibold text-sm">None Linked</p>
+                  )}
                 </div>
               </div>
-              <button className="text-[var(--primary)] flex items-center gap-1 text-xs font-semibold hover:underline">
-                <Plus className="h-3.5 w-3.5" /> Add
-              </button>
+              {bankAccount ? (
+                <button 
+                  onClick={() => {
+                    localStorage.removeItem("vouchit_bank");
+                    setBankAccount(null);
+                    setBankName("");
+                    setAccountNumber("");
+                    setAccountName("");
+                    import("sonner").then(({ toast }) => toast.success("Bank account unlinked successfully!"));
+                  }}
+                  className="text-red-500 flex items-center gap-1 text-xs font-semibold hover:underline"
+                >
+                  Unlink
+                </button>
+              ) : (
+                <button 
+                  onClick={() => setShowBankModal(true)}
+                  className="text-[var(--primary)] flex items-center gap-1 text-xs font-semibold hover:underline"
+                >
+                  <Plus className="h-3.5 w-3.5" /> Add
+                </button>
+              )}
             </div>
           </div>
         </div>

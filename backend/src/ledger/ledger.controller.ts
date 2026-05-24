@@ -34,4 +34,13 @@ export class LedgerController {
   async simulateWithdrawal(@Request() req: any, @Body() body: { amount: number }) {
     return this.ledgerService.simulateWithdrawal(req.user.userId, body.amount);
   }
+
+  @Get('bank/resolve')
+  async resolveBankAccount(
+    @Query('accountNumber') accountNumber: string,
+    @Query('bankCode') bankCode: string,
+  ) {
+    return this.ledgerService.resolveBankAccount(accountNumber, bankCode);
+  }
 }
+

@@ -10,9 +10,15 @@ export class WagersController {
   @Post()
   async createWager(
     @Request() req: any,
-    @Body() body: { description: string; amount: number },
+    @Body() body: { description: string; amount: number; isSymmetric?: boolean; expiryDays?: number },
   ) {
-    return this.wagersService.createWager(req.user.userId, body.description, body.amount);
+    return this.wagersService.createWager(
+      req.user.userId,
+      body.description,
+      body.amount,
+      body.isSymmetric,
+      body.expiryDays,
+    );
   }
 
   @Get()

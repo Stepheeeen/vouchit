@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
-import { ArrowRight, ShieldCheck } from "lucide-react";
+import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import Cookies from "js-cookie";
 
@@ -12,6 +12,7 @@ function VerifyContent() {
   const [otp, setOtp] = useState(["", "", "", "", "", ""]);
   const [isLoading, setIsLoading] = useState(false);
   const [errorMsg, setErrorMsg] = useState("");
+  const [resendStatus, setResendStatus] = useState("");
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
   const email = searchParams.get("email") || "";
@@ -57,6 +58,20 @@ function VerifyContent() {
     inputRefs.current[focusIndex]?.focus();
   };
 
+  const handleResend = async () => {
+    if (!email || isLoading) return;
+    setResendStatus("Sending...");
+    try {
+      const { authApi } = await import("@/lib/api");
+      await authApi.register(email, "resend_otp_placeholder");
+      setResendStatus("Code sent!");
+      setTimeout(() => setResendStatus(""), 3000);
+    } catch (err: any) {
+      setResendStatus("Failed to send.");
+      setTimeout(() => setResendStatus(""), 3000);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setErrorMsg("");
@@ -82,12 +97,12 @@ function VerifyContent() {
   };
 
   return (
-    <main className="flex-1 flex flex-col p-6 pt-12 md:pt-24 w-full max-w-7xl mx-auto tracking-tight">
-      <div className="flex-1 flex flex-col items-center justify-center gap-10 max-w-md mx-auto w-full md:bg-[var(--background)] md:border md:border-[var(--border)] md:p-12">
+    <main className="flex-1 flex flex-col p-6 pt-12 md:pt-24 w-full max-w-7xl mx-auto tracking-tight justify-center">
+      <div className="flex-1 flex flex-col items-center justify-center gap-10 max-w-md mx-auto w-full bg-white border border-[var(--border)] p-6 md:p-10 rounded-2xl shadow-md my-auto h-fit">
         
         <div className="flex flex-col items-center text-center gap-4 w-full">
-          <div className="h-20 w-20 bg-[var(--foreground)] text-[var(--background)] rounded-none flex items-center justify-center mb-2">
-            <ShieldCheck className="h-10 w-10" />
+          <div className="h-20 w-20 rounded-2xl flex items-center justify-center mb-2 overflow-hidden bg-[var(--primary)] shadow-md">
+            <img src="/logo-mark-transparent.png" alt="Vouchit Logo" className="h-12 w-12 object-contain" />
           </div>
           <h1 className="text-3xl font-bold uppercase tracking-tighter w-full border-b border-[var(--border)] pb-4">Verify.</h1>
           <p className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mt-2">
@@ -98,7 +113,7 @@ function VerifyContent() {
 
         <form onSubmit={handleSubmit} className="w-full flex flex-col gap-8">
           <div className="flex flex-col gap-4">
-            <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-widest text-center mb-2">OTP Code (123456)</label>
+            <label className="text-xs font-semibold text-[var(--muted-foreground)] uppercase tracking-widest text-center mb-2">Verification Code</label>
             <div className="flex justify-between gap-2 md:gap-3">
               {otp.map((digit, idx) => (
                 <input
@@ -112,7 +127,7 @@ function VerifyContent() {
                   onChange={(e) => handleChange(idx, e.target.value)}
                   onKeyDown={(e) => handleKeyDown(idx, e)}
                   onPaste={handlePaste}
-                  className="w-12 h-16 md:w-14 md:h-16 text-center text-2xl font-bold border border-[var(--border)] bg-transparent focus:border-[var(--foreground)] focus:outline-none transition-colors rounded-none"
+                  className="flex-1 min-w-[32px] max-w-[48px] h-14 md:h-16 text-center text-xl md:text-2xl font-bold border-2 border-[var(--border)] bg-white focus:border-[var(--primary)] focus:outline-none transition-all rounded-xl p-0 shadow-sm"
                 />
               ))}
             </div>
@@ -131,8 +146,13 @@ function VerifyContent() {
 
           <div className="text-center text-[10px] font-semibold uppercase tracking-widest mt-2 border-t border-[var(--border)] pt-6">
             <span className="text-[var(--muted-foreground)]">Didn't receive code? </span>
-            <button type="button" className="text-[var(--foreground)] hover:underline border-b border-[var(--foreground)] pb-0.5 ml-2">
-              Resend
+            <button 
+              type="button" 
+              onClick={handleResend}
+              disabled={resendStatus !== ""}
+              className="text-[var(--foreground)] hover:underline border-b border-[var(--foreground)] pb-0.5 ml-2 disabled:opacity-50"
+            >
+              {resendStatus || "Resend"}
             </button>
           </div>
         </form>

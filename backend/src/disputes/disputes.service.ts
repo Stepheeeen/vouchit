@@ -24,8 +24,8 @@ export class DisputesService {
       throw new BadRequestException('You are not a participant in this wager');
     }
 
-    if (wager.status !== 'ACTIVE') {
-      throw new BadRequestException('Disputes can only be opened on active wagers');
+    if (wager.status !== 'ACTIVE' && wager.status !== 'DISPUTED') {
+      throw new BadRequestException('Disputes can only be opened on active or disputed wagers');
     }
 
     // Create or find dispute

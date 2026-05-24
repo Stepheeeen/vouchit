@@ -6,12 +6,9 @@ export default function LandingPage() {
     <div className="min-h-screen bg-[var(--background)] flex flex-col font-sans">
       {/* Top Bar for Landing Page */}
       <header className="w-full flex items-center justify-between px-6 py-4 border-b border-[var(--border)] bg-white/80 backdrop-blur-md fixed top-0 z-50">
-        <div className="flex items-center gap-2.5">
-          <div className="h-8 w-8 rounded-lg flex items-center justify-center shadow-sm" style={{ background: "linear-gradient(135deg,#0d9488,#0f766e)" }}>
-            <ShieldCheck className="h-4 w-4 text-white" />
-          </div>
-          <span className="text-xl font-bold tracking-tight text-[var(--foreground)]">Vouchit</span>
-        </div>
+        <Link href="/" className="flex items-center">
+          <img src="/logo-full-colored.png" alt="Vouchit Logo" className="h-9 w-auto object-contain" />
+        </Link>
         <div className="flex items-center gap-4">
           <Link href="/auth/login" className="text-sm font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors">
             Log in

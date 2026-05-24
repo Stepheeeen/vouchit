@@ -15,17 +15,21 @@ export default function JoinByCodePage() {
   const handlePaste = async () => {
     try {
       const text = await navigator.clipboard.readText();
-      // If it is a full URL, extract the ID at the end
-      if (text.includes("/vouch/join/")) {
-        const parts = text.split("/vouch/join/");
-        const extracted = parts[parts.length - 1]?.trim();
-        if (extracted) {
-          setCode(extracted);
-          setError("");
-          return;
+      let cleanText = text.trim();
+      if (cleanText.includes("/vouch/join/")) {
+        const parts = cleanText.split("/vouch/join/");
+        const lastPart = parts[parts.length - 1]?.trim();
+        if (lastPart) {
+          cleanText = lastPart.split(/[?#/]/)[0] || lastPart;
+        }
+      } else if (cleanText.includes("/vouch/")) {
+        const parts = cleanText.split("/vouch/");
+        const lastPart = parts[parts.length - 1]?.trim();
+        if (lastPart) {
+          cleanText = lastPart.split(/[?#/]/)[0] || lastPart;
         }
       }
-      setCode(text.trim());
+      setCode(cleanText);
       setError("");
     } catch {
       setError("Clipboard read permission denied. Please paste manually.");
@@ -34,13 +38,24 @@ export default function JoinByCodePage() {
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    const cleanCode = code.trim();
+    let cleanCode = code.trim();
+    if (cleanCode.includes("/vouch/join/")) {
+      const parts = cleanCode.split("/vouch/join/");
+      const lastPart = parts[parts.length - 1]?.trim();
+      if (lastPart) {
+        cleanCode = lastPart.split(/[?#/]/)[0] || lastPart;
+      }
+    } else if (cleanCode.includes("/vouch/")) {
+      const parts = cleanCode.split("/vouch/");
+      const lastPart = parts[parts.length - 1]?.trim();
+      if (lastPart) {
+        cleanCode = lastPart.split(/[?#/]/)[0] || lastPart;
+      }
+    }
     if (!cleanCode) {
       setError("Please enter a valid invite code or wager ID.");
       return;
     }
-    // Wager IDs are MongoDB ObjectIDs, which are 24 character hex strings,
-    // or custom string formats. We will just redirect and let the join page handle existence validation.
     router.push(`/vouch/join/${cleanCode}`);
   };
 

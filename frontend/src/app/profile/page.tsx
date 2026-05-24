@@ -216,8 +216,14 @@ export default function ProfilePage() {
                 <span className="text-[var(--danger)]">Lost: {lostWagers.length}</span>
               </div>
               <div className="h-4 bg-[var(--muted)] rounded-full overflow-hidden flex">
-                <div className="h-full bg-[var(--success)] rounded-l-full transition-all" style={{ width: `${winRate}%` }} />
-                <div className="h-full bg-[var(--danger)] rounded-r-full flex-1" />
+                {settled.length === 0 ? (
+                  <div className="h-full bg-[var(--muted-foreground)]/20 w-full" />
+                ) : (
+                  <>
+                    <div className="h-full bg-[var(--success)] rounded-l-full transition-all" style={{ width: `${winRate}%` }} />
+                    <div className="h-full bg-[var(--danger)] rounded-r-full flex-1" />
+                  </>
+                )}
               </div>
             </div>
 

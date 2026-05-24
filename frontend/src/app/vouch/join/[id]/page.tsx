@@ -66,6 +66,8 @@ export default function JoinVouchPage() {
       setTimeout(() => router.push(`/vouch/${id}`), 1800);
     } catch (err: any) {
       setError(err.message || "Failed to join wager.");
+      const { toast } = await import("sonner");
+      toast.error(err.message || "Failed to join wager.");
     } finally {
       setIsJoining(false);
     }
@@ -181,7 +183,14 @@ export default function JoinVouchPage() {
         {/* Your stake input */}
         {!isAlreadyParticipant && !isFull && !isNotAvailable && (
           <div className="bg-white border border-[var(--border)] rounded-2xl p-5" style={{ boxShadow: "var(--shadow-sm)" }}>
-            <p className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-4">Your Position</p>
+            <p className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-4 flex items-center justify-between">
+              <span>Your Position</span>
+              {wager.isSymmetric && (
+                <span className="text-[9px] bg-[var(--primary)]/10 text-[var(--primary)] px-2 py-0.5 rounded font-bold uppercase tracking-wider">
+                  Symmetric Match
+                </span>
+              )}
+            </p>
             <div className="relative mb-3">
               <span className="absolute left-4 top-1/2 -translate-y-1/2 font-semibold text-xl text-[var(--muted-foreground)]">₦</span>
               <Input
@@ -190,9 +199,15 @@ export default function JoinVouchPage() {
                 placeholder="5000"
                 value={stake}
                 onChange={(e) => setStake(e.target.value)}
-                className="pl-10 text-2xl font-bold h-16 rounded-xl focus-visible:ring-0 focus-visible:border-[var(--foreground)]"
+                disabled={wager.isSymmetric}
+                className="pl-10 text-2xl font-bold h-16 rounded-xl focus-visible:ring-0 focus-visible:border-[var(--foreground)] disabled:opacity-85 disabled:bg-[var(--muted)]/20"
               />
             </div>
+            {wager.isSymmetric && (
+              <p className="text-[10px] text-amber-700 font-semibold mb-2">
+                This wager is symmetric. You must match the opponent's stake exactly.
+              </p>
+            )}
             {wallet && (
               <p className="text-xs text-[var(--muted-foreground)] font-semibold mb-1">
                 Available balance: <span className="text-[var(--foreground)]">₦{Number(wallet.availableBalance).toLocaleString()}</span>
@@ -208,7 +223,7 @@ export default function JoinVouchPage() {
             )}
             {stake && isStakeValid && hasEnoughBalance && (
               <p className="text-xs text-[var(--success)] font-semibold">
-                If you win: ₦{(stakeAmount * 2 * 0.975).toFixed(0)} after 2.5% fee.
+                If you win: ₦{((stakeAmount + Number(creatorParticipant?.amount || stakeAmount)) * 0.975).toFixed(0)} after 2.5% fee.
               </p>
             )}
           </div>

@@ -24,6 +24,7 @@ export default function ActiveVouchPage() {
   const [currentUser, setCurrentUser] = useState<any>(null);
   const [loading, setLoading]       = useState(true);
   const [error, setError]           = useState("");
+  const [dispute, setDispute]       = useState<any>(null);
 
   const [isSettleOpen, setIsSettleOpen] = useState(false);
   const [selectedWinner, setSelectedWinner] = useState<string | null>(null);
@@ -34,13 +35,17 @@ export default function ActiveVouchPage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const { wagersApi, userApi } = await import("@/lib/api");
+        const { wagersApi, userApi, disputesApi } = await import("@/lib/api");
         const [wagerData, profileData] = await Promise.all([
           wagersApi.getById(id),
           userApi.getProfile().catch(() => null),
         ]);
         setWager(wagerData);
         setCurrentUser(profileData);
+        if (wagerData.status === "DISPUTED") {
+          const disputeData = await disputesApi.getByWagerId(id).catch(() => null);
+          setDispute(disputeData);
+        }
       } catch {
         setError("Could not load wager.");
       } finally {
@@ -59,11 +64,27 @@ export default function ActiveVouchPage() {
       const result = await wagersApi.settle(id, selectedWinner);
       setSettleResult(result);
       setIsSettleOpen(false);
+      
+      const { toast } = await import("sonner");
+      if (result.status === "SETTLED") {
+        toast.success(result.message || "Wager settled successfully!");
+      } else if (result.status === "DISPUTED") {
+        toast.warning("Disagreement recorded. Dispute opened automatically.");
+      } else {
+        toast.info(result.message || "Vote recorded successfully!");
+      }
+
       // Refresh wager
-      const { wagersApi: wa } = await import("@/lib/api");
-      setWager(await wa.getById(id));
+      const { wagersApi: wa, disputesApi: da } = await import("@/lib/api");
+      const updatedWager = await wa.getById(id);
+      setWager(updatedWager);
+      if (updatedWager.status === "DISPUTED") {
+        setDispute(await da.getByWagerId(id).catch(() => null));
+      }
     } catch (err: any) {
       setSettleError(err.message || "Failed to submit settlement vote.");
+      const { toast } = await import("sonner");
+      toast.error(err.message || "Failed to submit settlement vote.");
     } finally {
       setIsSettling(false);
     }
@@ -219,6 +240,63 @@ export default function ActiveVouchPage() {
                 <Button variant="outline" size="sm" className="mt-1 w-fit">View Invite Link</Button>
               </Link>
             </div>
+          )}
+
+          {/* Disputed banner */}
+          {wager.status === "DISPUTED" && myParticipant && (
+            <div className="border border-red-200 bg-red-50 p-4 flex flex-col gap-2">
+              <p className="text-sm font-semibold text-red-800">Wager in Dispute</p>
+              <p className="text-xs text-red-700">
+                A disagreement was recorded for this wager. You can upload files, screenshots, or web links to support your claim.
+              </p>
+              <Link href={`/vouch/${id}/dispute`}>
+                <Button variant="destructive" size="sm" className="mt-1 w-fit bg-[var(--danger)] hover:bg-[var(--danger)]/90 text-white border-0">
+                  Upload Evidence
+                </Button>
+              </Link>
+            </div>
+          )}
+
+          {/* Dispute evidence section */}
+          {wager.status === "DISPUTED" && dispute && (
+            <section className="flex flex-col gap-4">
+              <div className="flex justify-between items-end border-b border-[var(--border)] pb-2">
+                <h2 className="text-sm font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Dispute Evidence</h2>
+                <span className="text-xs font-bold text-amber-600 bg-amber-50 px-2.5 py-0.5 rounded-full border border-amber-200 uppercase tracking-wider">
+                  Under Review
+                </span>
+              </div>
+              <div className="flex flex-col gap-3">
+                {dispute.evidence?.map((ev: any) => (
+                  <div key={ev.id} className="border border-[var(--border)] p-4 bg-white rounded-xl flex flex-col gap-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-bold text-[var(--foreground)]">
+                        {ev.user?.displayName || ev.user?.email || "User"}
+                      </span>
+                      <span className="text-[10px] text-[var(--muted-foreground)]">
+                        {new Date(ev.createdAt).toLocaleString()}
+                      </span>
+                    </div>
+                    <p className="text-sm text-[var(--muted-foreground)] leading-normal italic">
+                      "{ev.textClaim}"
+                    </p>
+                    {ev.proofType && (
+                      <div className="flex items-center gap-1.5 mt-1 text-[10px] font-semibold text-[var(--primary)] uppercase tracking-wider bg-[var(--muted)] w-fit px-2 py-1 rounded">
+                        <span>Proof ({ev.proofType})</span>
+                        {ev.mediaUrl && (
+                          <a href={ev.mediaUrl} target="_blank" rel="noopener noreferrer" className="underline hover:text-[var(--foreground)] ml-1">
+                            View Link
+                          </a>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {(!dispute.evidence || dispute.evidence.length === 0) && (
+                  <p className="text-xs text-[var(--muted-foreground)] italic">No evidence has been uploaded yet.</p>
+                )}
+              </div>
+            </section>
           )}
 
           {/* Info */}

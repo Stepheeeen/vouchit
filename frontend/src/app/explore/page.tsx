@@ -31,13 +31,18 @@ export default function ExplorePage() {
   const [loading, setLoading] = useState(true);
   const [cat, setCat]       = useState("All");
   const [search, setSearch] = useState("");
+  const [currentUser, setCurrentUser] = useState<any>(null);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const { wagersApi } = await import("@/lib/api");
-        const data = await wagersApi.getAll();
+        const { wagersApi, userApi } = await import("@/lib/api");
+        const [data, profile] = await Promise.all([
+          wagersApi.getAll(),
+          userApi.getProfile().catch(() => null)
+        ]);
         setWagers(data);
+        setCurrentUser(profile);
       } catch {
         setWagers([]);
       } finally {
@@ -169,41 +174,47 @@ export default function ExplorePage() {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-            {filtered.map((w) => (
-              <Link key={w.id} href={`/vouch/join/${w.id}`}>
-                <div
-                  className="group bg-white border border-[var(--border)] rounded-2xl p-5 hover:border-[var(--primary)] hover:shadow-md transition-all h-full flex flex-col justify-between gap-4"
-                  style={{ boxShadow: "var(--shadow-sm)" }}
-                >
-                  <div className="flex justify-between items-start gap-3">
-                    <p className="font-semibold text-sm leading-snug flex-1 text-[var(--foreground)] line-clamp-2">{w.description}</p>
-                    <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${categoryColor[w.category] || categoryColor["Other"]}`}>
-                      {w.category}
-                    </span>
-                  </div>
-                  <div className="flex items-center justify-between pt-3 border-t border-[var(--border)]">
-                    <div className="flex items-center gap-2">
-                      <div
-                        className="h-7 w-7 rounded-full flex items-center justify-center text-white font-bold text-[10px]"
-                        style={{ background: "linear-gradient(135deg,#0d9488,#115e59)" }}
-                      >
-                        {w.initials}
-                      </div>
-                      <span className="text-xs text-[var(--muted-foreground)] font-semibold">{w.creatorName}</span>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <div className="flex items-center gap-1 text-[10px] text-[var(--muted-foreground)]">
-                        <Clock className="h-3 w-3" />
-                        {Math.max(0, Math.round((new Date(w.expiresAt).getTime() - Date.now()) / 3600000))}h left
-                      </div>
-                      <span className="font-bold text-base text-[var(--primary)]">
-                        ₦{(Number(w.totalPot) / 1000).toFixed(0)}k
+            {filtered.map((w) => {
+              const isCreator = currentUser && w.creatorId === currentUser.id;
+              const isAlreadyJoined = w.participants?.some((p: any) => p.userId === currentUser?.id);
+              const isJoinable = w.status === "PENDING_FUNDING" && !isCreator && !isAlreadyJoined;
+              const wagerUrl = isJoinable ? `/vouch/join/${w.id}` : `/vouch/${w.id}`;
+              return (
+                <Link key={w.id} href={wagerUrl}>
+                  <div
+                    className="group bg-white border border-[var(--border)] rounded-2xl p-5 hover:border-[var(--primary)] hover:shadow-md transition-all h-full flex flex-col justify-between gap-4"
+                    style={{ boxShadow: "var(--shadow-sm)" }}
+                  >
+                    <div className="flex justify-between items-start gap-3">
+                      <p className="font-semibold text-sm leading-snug flex-1 text-[var(--foreground)] line-clamp-2">{w.description}</p>
+                      <span className={`shrink-0 text-[10px] font-semibold px-2 py-0.5 rounded-full border ${categoryColor[w.category] || categoryColor["Other"]}`}>
+                        {w.category}
                       </span>
                     </div>
+                    <div className="flex items-center justify-between pt-3 border-t border-[var(--border)]">
+                      <div className="flex items-center gap-2">
+                        <div
+                          className="h-7 w-7 rounded-full flex items-center justify-center text-white font-bold text-[10px]"
+                          style={{ background: "linear-gradient(135deg,#0d9488,#115e59)" }}
+                        >
+                          {w.initials}
+                        </div>
+                        <span className="text-xs text-[var(--muted-foreground)] font-semibold">{w.creatorName}</span>
+                      </div>
+                      <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-1 text-[10px] text-[var(--muted-foreground)]">
+                          <Clock className="h-3 w-3" />
+                          {Math.max(0, Math.round((new Date(w.expiresAt).getTime() - Date.now()) / 3600000))}h left
+                        </div>
+                        <span className="font-bold text-base text-[var(--primary)]">
+                          ₦{(Number(w.totalPot) / 1000).toFixed(0)}k
+                        </span>
+                      </div>
+                    </div>
                   </div>
-                </div>
-              </Link>
-            ))}
+                </Link>
+              );
+            })}
           </div>
         )}
       </main>

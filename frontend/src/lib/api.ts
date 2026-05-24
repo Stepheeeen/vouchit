@@ -1,6 +1,13 @@
 import Cookies from 'js-cookie';
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+const isLocal = typeof window !== 'undefined' && (
+  window.location.hostname === 'localhost' || 
+  window.location.hostname === '127.0.0.1'
+);
+
+export const API_BASE_URL = isLocal 
+  ? 'http://localhost:3001' 
+  : (process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001');
 
 export async function fetchApi(endpoint: string, options: RequestInit = {}) {
   const token = Cookies.get('vouchit_token');
@@ -37,8 +44,8 @@ export const authApi = {
 };
 
 export const wagersApi = {
-  create: (description: string, amount: number) =>
-    fetchApi('/wagers', { method: 'POST', body: JSON.stringify({ description, amount }) }),
+  create: (description: string, amount: number, isSymmetric?: boolean, expiryDays?: number) =>
+    fetchApi('/wagers', { method: 'POST', body: JSON.stringify({ description, amount, isSymmetric, expiryDays }) }),
   getAll: () => fetchApi('/wagers'),
   getById: (id: string) => fetchApi(`/wagers/${id}`),
   getMy: () => fetchApi('/wagers/my'),
@@ -54,6 +61,8 @@ export const userApi = {
     fetchApi('/users/me', { method: 'PATCH', body: JSON.stringify(data) }),
   changePassword: (currentPassword: string, newPassword: string) =>
     fetchApi('/users/me/password', { method: 'PATCH', body: JSON.stringify({ currentPassword, newPassword }) }),
+  verifyKYC: (type: 'BVN' | 'NIN', number: string) =>
+    fetchApi('/users/kyc', { method: 'POST', body: JSON.stringify({ type, number }) }),
 };
 
 export const walletApi = {
@@ -64,6 +73,8 @@ export const walletApi = {
     fetchApi(`/wallet/deposit/verify?reference=${reference}`),
   withdraw: (amount: number) =>
     fetchApi('/wallet/withdraw', { method: 'POST', body: JSON.stringify({ amount }) }),
+  resolveBank: (accountNumber: string, bankCode: string) =>
+    fetchApi(`/wallet/bank/resolve?accountNumber=${accountNumber}&bankCode=${bankCode}`),
 };
 
 export const disputesApi = {
@@ -75,3 +86,10 @@ export const disputesApi = {
 export const leaderboardApi = {
   get: () => fetchApi('/users/leaderboard'),
 };
+
+export const notificationsApi = {
+  getAll: () => fetchApi('/notifications'),
+  markRead: (id: string) => fetchApi(`/notifications/${id}/read`, { method: 'PATCH' }),
+  markAllRead: () => fetchApi('/notifications/read-all', { method: 'POST' }),
+};
+

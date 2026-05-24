@@ -165,4 +165,40 @@ export class LedgerService {
 
     return updatedWallet;
   }
+
+  async resolveBankAccount(accountNumber: string, bankCode: string) {
+    if (!accountNumber || accountNumber.length !== 10) {
+      throw new BadRequestException('Account number must be 10 digits');
+    }
+    if (!bankCode) {
+      throw new BadRequestException('Bank code is required');
+    }
+
+    const secretKey = process.env.PAYSTACK_SECRET_KEY;
+    if (!secretKey) {
+      // Mock mode
+      if (accountNumber === '0123456789') {
+        return { accountName: 'Vouchit Test Account', accountNumber, bankCode };
+      }
+      return { accountName: 'Demola Oladele', accountNumber, bankCode };
+    }
+
+    try {
+      const response = await axios.get(
+        `https://api.paystack.co/bank/resolve?account_number=${accountNumber}&bank_code=${bankCode}`,
+        {
+          headers: { Authorization: `Bearer ${secretKey}` },
+        }
+      );
+      return {
+        accountName: response.data.data.account_name,
+        accountNumber,
+        bankCode,
+      };
+    } catch (error: any) {
+      throw new BadRequestException(
+        error.response?.data?.message || 'Could not resolve bank account details. Check number and bank.'
+      );
+    }
+  }
 }

@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Body, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Patch, Post, Body, UseGuards, Request } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
@@ -33,5 +33,14 @@ export class UsersController {
   @Get('leaderboard')
   async getLeaderboard() {
     return this.usersService.getLeaderboard();
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Post('kyc')
+  async verifyKYC(
+    @Request() req: any,
+    @Body() body: { type: 'BVN' | 'NIN'; number: string },
+  ) {
+    return this.usersService.verifyKYC(req.user.userId, body.type, body.number);
   }
 }
