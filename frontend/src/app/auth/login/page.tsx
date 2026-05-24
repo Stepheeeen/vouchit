@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ShieldCheck, ArrowRight, Smartphone } from "lucide-react";
+import { ShieldCheck, ArrowRight, Smartphone, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import Cookies from "js-cookie";
@@ -88,7 +88,7 @@ export default function LoginPage() {
           {!isLogin && (
             <div className="flex items-start gap-4 p-5 border border-[var(--border)] bg-[var(--muted)]/10 group hover:border-[var(--foreground)] transition-colors cursor-pointer" onClick={() => setIsOver18(!isOver18)}>
               <div className={`mt-0.5 h-5 w-5 border-2 flex items-center justify-center shrink-0 transition-colors ${isOver18 ? 'bg-[var(--foreground)] border-[var(--foreground)]' : 'border-[var(--border)] group-hover:border-[var(--foreground)]'}`}>
-                {isOver18 && <div className="h-2.5 w-2.5 bg-[var(--background)]"></div>}
+                {isOver18 && <Check className="h-3.5 w-3.5 text-[var(--background)] stroke-[3]" />}
               </div>
               <label htmlFor="age" className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] leading-relaxed cursor-pointer group-hover:text-[var(--foreground)] transition-colors">
                 I confirm that I am at least <strong className="text-[var(--foreground)]">18 years old</strong> and I agree to the Terms of Service.
