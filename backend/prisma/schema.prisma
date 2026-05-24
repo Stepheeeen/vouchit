@@ -8,16 +8,18 @@ datasource db {
 }
 
 model User {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  email         String   @unique
-  password      String
+  id           String    @id @default(auto()) @map("_id") @db.ObjectId
+  email        String    @unique
+  password     String
+  displayName  String?
+  bio          String?
   emailVerified Boolean  @default(false)
-  otp           String?
-  otpExpiresAt  DateTime?
-  phone         String?  @unique
-  kycTier       Int      @default(0) // 0: usage, 1: BVN/NIN verified
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  otp          String?
+  otpExpiresAt DateTime?
+  phone        String?   @unique
+  kycTier      Int       @default(0) // 0: basic, 1: BVN/NIN verified
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   wallet            Wallet?
   wagersCreated     Wager[]            @relation("WagerCreator")
@@ -30,9 +32,9 @@ model Wallet {
   id               String   @id @default(auto()) @map("_id") @db.ObjectId
   userId           String   @unique @db.ObjectId
   user             User     @relation(fields: [userId], references: [id])
-  availableBalance Float  @default(0.00)
-  escrowBalance    Float  @default(0.00)
-  lockedBalance    Float  @default(0.00)
+  availableBalance Float    @default(0.00)
+  escrowBalance    Float    @default(0.00)
+  lockedBalance    Float    @default(0.00)
   createdAt        DateTime @default(now())
   updatedAt        DateTime @updatedAt
 
@@ -40,20 +42,20 @@ model Wallet {
 }
 
 model LedgerEntry {
-  id            String   @id @default(auto()) @map("_id") @db.ObjectId
-  walletId      String   @db.ObjectId
-  wallet        Wallet   @relation(fields: [walletId], references: [id])
-  transactionId String?  @db.ObjectId
+  id            String       @id @default(auto()) @map("_id") @db.ObjectId
+  walletId      String       @db.ObjectId
+  wallet        Wallet       @relation(fields: [walletId], references: [id])
+  transactionId String?      @db.ObjectId
   transaction   Transaction? @relation(fields: [transactionId], references: [id])
-  amount        Float  // Positive for credit, negative for debit
-  type          String   // e.g., 'DEPOSIT', 'WITHDRAWAL', 'ESCROW_LOCK', 'ESCROW_RELEASE', 'FEE'
+  amount        Float        // Positive for credit, negative for debit
+  type          String       // 'DEPOSIT', 'WITHDRAWAL', 'ESCROW_LOCK', 'ESCROW_RELEASE', 'WIN', 'FEE'
   description   String?
-  createdAt     DateTime @default(now())
+  createdAt     DateTime     @default(now())
 }
 
 model Transaction {
   id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  reference   String   @unique // External or internal reference (e.g., Paystack ref)
+  reference   String   @unique
   status      String   // 'PENDING', 'SUCCESS', 'FAILED'
   type        String   // 'DEPOSIT', 'WITHDRAWAL'
   metadata    Json?
@@ -68,8 +70,9 @@ model Wager {
   creatorId   String   @db.ObjectId
   creator     User     @relation("WagerCreator", fields: [creatorId], references: [id])
   description String
-  totalPot    Float  @default(0.00)
+  totalPot    Float    @default(0.00)
   status      String   // 'PENDING_FUNDING', 'ACTIVE', 'SETTLED', 'DISPUTED', 'CANCELLED', 'EXPIRED'
+  winnerId    String?  @db.ObjectId // Set when settled
   expiresAt   DateTime
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
@@ -79,16 +82,17 @@ model Wager {
 }
 
 model WagerParticipant {
-  id        String   @id @default(auto()) @map("_id") @db.ObjectId
-  wagerId   String   @db.ObjectId
-  wager     Wager    @relation(fields: [wagerId], references: [id])
-  userId    String   @db.ObjectId
-  user      User     @relation(fields: [userId], references: [id])
-  side      String   // 'CREATOR', 'CHALLENGER'
-  amount    Float
-  status    String   // 'PENDING', 'FUNDED', 'REFUNDED'
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  wagerId     String   @db.ObjectId
+  wager       Wager    @relation(fields: [wagerId], references: [id])
+  userId      String   @db.ObjectId
+  user        User     @relation(fields: [userId], references: [id])
+  side        String   // 'CREATOR', 'CHALLENGER'
+  amount      Float
+  status      String   // 'PENDING', 'FUNDED', 'REFUNDED'
+  settleVote  String?  @db.ObjectId // userId they voted as winner
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   @@unique([wagerId, userId])
 }
@@ -113,6 +117,7 @@ model Evidence {
   user       User     @relation(fields: [userId], references: [id])
   mediaUrl   String?
   textClaim  String?
+  proofType  String?  // 'screenshot', 'document', 'link'
   createdAt  DateTime @default(now())
 }
 
@@ -120,9 +125,8 @@ model Notification {
   id        String   @id @default(auto()) @map("_id") @db.ObjectId
   userId    String   @db.ObjectId
   user      User     @relation(fields: [userId], references: [id])
-  type      String   // 'WAGER_CREATED', 'WAGER_FUNDED', 'SETTLEMENT', 'DISPUTE_OPENED', 'DISPUTE_RESOLVED'
+  type      String   // 'WAGER_CREATED', 'WAGER_JOINED', 'SETTLEMENT', 'DISPUTE_OPENED', 'DISPUTE_RESOLVED'
   message   String
   readAt    DateTime?
   createdAt DateTime @default(now())
 }
-

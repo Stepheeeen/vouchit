@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { ShieldCheck, ArrowRight, Smartphone } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import Cookies from "js-cookie";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -25,7 +26,8 @@ export default function LoginPage() {
       if (isLogin) {
         const res = await authApi.login(email, password);
         if (res.accessToken) {
-          localStorage.setItem("vouchit_token", res.accessToken);
+          Cookies.set("vouchit_token", res.accessToken, { expires: 7 });
+          localStorage.setItem("vouchit_token", res.accessToken); // keep for backward compatibility during transition
           router.push("/dashboard");
         }
       } else {

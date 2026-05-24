@@ -6,9 +6,10 @@ import { LedgerModule } from './ledger/ledger.module';
 import { UsersModule } from './users/users.module';
 import { PrismaModule } from './prisma/prisma.module';
 import { WagersModule } from './wagers/wagers.module';
+import { DisputesModule } from './disputes/disputes.module';
 
 @Module({
-  imports: [AuthModule, LedgerModule, UsersModule, PrismaModule, WagersModule],
+  imports: [AuthModule, LedgerModule, UsersModule, PrismaModule, WagersModule, DisputesModule],
   controllers: [AppController],
   providers: [AppService],
 })

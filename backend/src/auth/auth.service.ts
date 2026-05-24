@@ -59,7 +59,7 @@ export class AuthService {
     try {
       if (process.env.RESEND_API_KEY) {
         await this.resend.emails.send({
-          from: 'Vouchit <onboarding@resend.dev>',
+          from: process.env.RESEND_FROM_EMAIL || 'Vouchit <noreply@usevouchit.com>',
           to: email,
           subject: 'Your Vouchit Verification Code',
           html: `<p>Your verification code is: <strong>${otp}</strong></p>`,

@@ -4,6 +4,7 @@ import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import Cookies from "js-cookie";
 
 function VerifyContent() {
   const router = useRouter();
@@ -67,6 +68,7 @@ function VerifyContent() {
       const { authApi } = await import("@/lib/api");
       const res = await authApi.verifyEmail(email, code);
       if (res.accessToken) {
+        Cookies.set("vouchit_token", res.accessToken, { expires: 7 });
         localStorage.setItem("vouchit_token", res.accessToken);
         router.push("/dashboard");
       } else {

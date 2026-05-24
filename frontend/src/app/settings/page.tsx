@@ -1,12 +1,14 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   ArrowLeft, User, Bell, Shield, CreditCard, LogOut,
   ChevronRight, Check, Eye, EyeOff, Smartphone, Lock,
-  Trash2, AlertTriangle, Camera, ToggleLeft, ToggleRight
+  Trash2, AlertTriangle, Camera, Loader2
 } from "lucide-react";
+import Cookies from "js-cookie";
 
 function Toggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) {
   return (
@@ -52,10 +54,28 @@ function SettingRow({ label, sub, children }: { label: string; sub?: string; chi
 }
 
 export default function SettingsPage() {
-  const [name, setName] = useState("John Doe");
-  const [email, setEmail] = useState("john@example.com");
+  const router = useRouter();
+
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
+
+  // Profile Form
+  const [name, setName] = useState("");
+  const [email, setEmail] = useState("");
+  const [phone, setPhone] = useState("");
+  const [bio, setBio] = useState("");
   const [showPhone, setShowPhone] = useState(false);
+  const [savingProfile, setSavingProfile] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [profileError, setProfileError] = useState("");
+
+  // Password Form
+  const [currentPassword, setCurrentPassword] = useState("");
+  const [newPassword, setNewPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [savingPassword, setSavingPassword] = useState(false);
+  const [passwordSaved, setPasswordSaved] = useState(false);
+  const [passwordError, setPasswordError] = useState("");
 
   // Notification toggles
   const [notifWager, setNotifWager] = useState(true);
@@ -74,13 +94,95 @@ export default function SettingsPage() {
   const [publicProfile, setPublicProfile] = useState(true);
   const [showOnLeaderboard, setShowOnLeaderboard] = useState(true);
 
-  const handleSaveProfile = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2500);
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const { userApi } = await import("@/lib/api");
+        const profile = await userApi.getProfile();
+        setUser(profile);
+        setName(profile.displayName || "");
+        setEmail(profile.email || "");
+        setPhone(profile.phone || "");
+        setBio(profile.bio || "");
+
+        // Load local toggles
+        setNotifWager(localStorage.getItem("notifWager") !== "false");
+        setNotifPayout(localStorage.getItem("notifPayout") !== "false");
+        setNotifDispute(localStorage.getItem("notifDispute") !== "false");
+        setNotifMarketing(localStorage.getItem("notifMarketing") === "true");
+        setNotifEmail(localStorage.getItem("notifEmail") !== "false");
+        setNotifSMS(localStorage.getItem("notifSMS") === "true");
+        setTwoFA(localStorage.getItem("twoFA") === "true");
+        setBiometric(localStorage.getItem("biometric") === "true");
+        setLoginAlerts(localStorage.getItem("loginAlerts") !== "false");
+        setPublicProfile(localStorage.getItem("publicProfile") !== "false");
+        setShowOnLeaderboard(localStorage.getItem("showOnLeaderboard") !== "false");
+      } catch {
+        router.push("/auth/login");
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [router]);
+
+  const handleSaveProfile = async () => {
+    if (savingProfile) return;
+    setSavingProfile(true);
+    setProfileError("");
+    try {
+      const { userApi } = await import("@/lib/api");
+      await userApi.updateProfile({ displayName: name, phone, bio });
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+    } catch (err: any) {
+      setProfileError(err.message || "Failed to update profile.");
+    } finally {
+      setSavingProfile(false);
+    }
+  };
+
+  const handleChangePassword = async () => {
+    if (savingPassword) return;
+    if (newPassword !== confirmPassword) {
+      setPasswordError("New passwords do not match.");
+      return;
+    }
+    setSavingPassword(true);
+    setPasswordError("");
+    try {
+      const { userApi } = await import("@/lib/api");
+      await userApi.changePassword(currentPassword, newPassword);
+      setPasswordSaved(true);
+      setCurrentPassword("");
+      setNewPassword("");
+      setConfirmPassword("");
+      setTimeout(() => setPasswordSaved(false), 2500);
+    } catch (err: any) {
+      setPasswordError(err.message || "Failed to change password.");
+    } finally {
+      setSavingPassword(false);
+    }
+  };
+
+  const handleLogout = () => {
+    Cookies.remove("vouchit_token");
+    localStorage.removeItem("vouchit_token");
+    router.push("/auth/login");
   };
 
   const SECTIONS = ["Profile", "Notifications", "Security", "Payment", "Privacy", "Account"];
   const [activeSection, setActiveSection] = useState("Profile");
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-[var(--primary)]" />
+      </div>
+    );
+  }
+
+  const initials = name ? name.split(" ").map(n => n[0]).join("").toUpperCase().slice(0, 2) : "??";
 
   return (
     <div className="flex-1 flex flex-col">
@@ -94,7 +196,7 @@ export default function SettingsPage() {
         <h1 className="font-bold text-base flex-1">Settings</h1>
       </div>
 
-      <main className="flex-1 w-full px-4 md:px-8 lg:px-12 py-6 md:py-8">
+      <main className="flex-1 w-full px-4 md:px-8 lg:px-12 py-6 md:py-8 tracking-tight">
         {/* Desktop title */}
         <div className="hidden md:flex items-center justify-between mb-8">
           <div>
@@ -113,7 +215,7 @@ export default function SettingsPage() {
           <nav className="lg:col-span-1">
             <div className="bg-white border border-[var(--border)] rounded-2xl overflow-hidden" style={{ boxShadow: "var(--shadow-sm)" }}>
               {SECTIONS.map((s, i) => {
-                const icons = [User, Bell, Shield, CreditCard, Eye, Trash2];
+                const icons = [User, Bell, Shield, CreditCard, Eye, Lock];
                 const Icon = icons[i];
                 const isActive = activeSection === s;
                 return (
@@ -150,7 +252,7 @@ export default function SettingsPage() {
                       className="h-20 w-20 rounded-full flex items-center justify-center text-white font-bold text-2xl"
                       style={{ background: "linear-gradient(135deg,#0d9488,#115e59)", boxShadow: "0 4px 16px rgba(13,148,136,0.3)" }}
                     >
-                      JD
+                      {initials}
                     </div>
                     <button className="absolute bottom-0 right-0 h-7 w-7 rounded-full bg-[var(--primary)] flex items-center justify-center shadow-md hover:opacity-90 transition-opacity">
                       <Camera className="h-3.5 w-3.5 text-white" />
@@ -165,6 +267,12 @@ export default function SettingsPage() {
 
                 {/* Form fields */}
                 <div className="flex flex-col gap-4">
+                  {profileError && (
+                    <div className="p-3 border border-red-300 bg-red-50 text-red-700 text-xs font-semibold rounded-xl">
+                      {profileError}
+                    </div>
+                  )}
+
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="flex flex-col gap-1.5">
                       <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Full Name</label>
@@ -179,8 +287,8 @@ export default function SettingsPage() {
                       <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Email Address</label>
                       <input
                         value={email}
-                        onChange={e => setEmail(e.target.value)}
-                        className="w-full border border-[var(--border)] rounded-xl px-4 py-2.5 text-sm bg-white focus:outline-none focus:border-[var(--primary)] transition-colors"
+                        disabled
+                        className="w-full border border-[var(--border)] rounded-xl px-4 py-2.5 text-sm bg-[var(--muted)] text-[var(--muted-foreground)] cursor-not-allowed"
                         placeholder="john@example.com"
                         type="email"
                       />
@@ -190,11 +298,12 @@ export default function SettingsPage() {
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Phone Number</label>
                     <div className="flex gap-0 border border-[var(--border)] rounded-xl overflow-hidden focus-within:border-[var(--primary)] transition-colors">
-                      <span className="flex items-center px-4 text-sm font-semibold bg-[var(--muted)] border-r border-[var(--border)]">+234</span>
                       <div className="flex-1 relative">
                         <input
                           type={showPhone ? "text" : "password"}
-                          defaultValue="8012345678"
+                          value={phone}
+                          onChange={e => setPhone(e.target.value)}
+                          placeholder="e.g. +2348012345678"
                           className="w-full px-4 py-2.5 text-sm bg-white focus:outline-none"
                         />
                         <button
@@ -211,19 +320,22 @@ export default function SettingsPage() {
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Bio</label>
                     <textarea
+                      value={bio}
+                      onChange={e => setBio(e.target.value)}
                       className="w-full border border-[var(--border)] rounded-xl px-4 py-2.5 text-sm bg-white focus:outline-none focus:border-[var(--primary)] transition-colors resize-none"
                       rows={3}
                       placeholder="Tell others a bit about yourself..."
-                      defaultValue="I wager, therefore I am. 🎯"
                     />
                   </div>
 
                   <div className="flex justify-end pt-2">
                     <button
                       onClick={handleSaveProfile}
-                      className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
+                      disabled={savingProfile}
+                      className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50"
                       style={{ background: "linear-gradient(135deg,#0d9488,#0f766e)", boxShadow: "0 4px 12px rgba(13,148,136,0.3)" }}
                     >
+                      {savingProfile ? <Loader2 className="h-4 w-4 animate-spin" /> : null}
                       {saved ? <><Check className="h-4 w-4" /> Saved!</> : "Save Changes"}
                     </button>
                   </div>
@@ -238,25 +350,49 @@ export default function SettingsPage() {
                 <div className="mb-5">
                   <p className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-2">In-App Alerts</p>
                   <SettingRow label="Wager Activity" sub="Updates on your active wagers">
-                    <Toggle enabled={notifWager} onToggle={() => setNotifWager(!notifWager)} />
+                    <Toggle enabled={notifWager} onToggle={() => {
+                      const val = !notifWager;
+                      setNotifWager(val);
+                      localStorage.setItem("notifWager", String(val));
+                    }} />
                   </SettingRow>
                   <SettingRow label="Payouts & Settlements" sub="When funds are released or received">
-                    <Toggle enabled={notifPayout} onToggle={() => setNotifPayout(!notifPayout)} />
+                    <Toggle enabled={notifPayout} onToggle={() => {
+                      const val = !notifPayout;
+                      setNotifPayout(val);
+                      localStorage.setItem("notifPayout", String(val));
+                    }} />
                   </SettingRow>
                   <SettingRow label="Disputes" sub="Updates on open dispute cases">
-                    <Toggle enabled={notifDispute} onToggle={() => setNotifDispute(!notifDispute)} />
+                    <Toggle enabled={notifDispute} onToggle={() => {
+                      const val = !notifDispute;
+                      setNotifDispute(val);
+                      localStorage.setItem("notifDispute", String(val));
+                    }} />
                   </SettingRow>
                   <SettingRow label="Promotions & News" sub="Platform updates and featured wagers">
-                    <Toggle enabled={notifMarketing} onToggle={() => setNotifMarketing(!notifMarketing)} />
+                    <Toggle enabled={notifMarketing} onToggle={() => {
+                      const val = !notifMarketing;
+                      setNotifMarketing(val);
+                      localStorage.setItem("notifMarketing", String(val));
+                    }} />
                   </SettingRow>
                 </div>
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-2">Delivery Channels</p>
                   <SettingRow label="Email Notifications" sub={email}>
-                    <Toggle enabled={notifEmail} onToggle={() => setNotifEmail(!notifEmail)} />
+                    <Toggle enabled={notifEmail} onToggle={() => {
+                      const val = !notifEmail;
+                      setNotifEmail(val);
+                      localStorage.setItem("notifEmail", String(val));
+                    }} />
                   </SettingRow>
-                  <SettingRow label="SMS Alerts" sub="+234 801 234 5678">
-                    <Toggle enabled={notifSMS} onToggle={() => setNotifSMS(!notifSMS)} />
+                  <SettingRow label="SMS Alerts" sub={phone || "No phone added"}>
+                    <Toggle enabled={notifSMS} onToggle={() => {
+                      const val = !notifSMS;
+                      setNotifSMS(val);
+                      localStorage.setItem("notifSMS", String(val));
+                    }} />
                   </SettingRow>
                 </div>
               </div>
@@ -268,32 +404,76 @@ export default function SettingsPage() {
                 <div className="bg-white border border-[var(--border)] rounded-2xl p-6" style={{ boxShadow: "var(--shadow-sm)" }}>
                   <SectionHeader icon={Shield} title="Security" subtitle="Keep your account safe." />
                   <SettingRow label="Two-Factor Authentication" sub="Require OTP on every login">
-                    <Toggle enabled={twoFA} onToggle={() => setTwoFA(!twoFA)} />
+                    <Toggle enabled={twoFA} onToggle={() => {
+                      const val = !twoFA;
+                      setTwoFA(val);
+                      localStorage.setItem("twoFA", String(val));
+                    }} />
                   </SettingRow>
                   <SettingRow label="Biometric Login" sub="Use fingerprint or Face ID">
-                    <Toggle enabled={biometric} onToggle={() => setBiometric(!biometric)} />
+                    <Toggle enabled={biometric} onToggle={() => {
+                      const val = !biometric;
+                      setBiometric(val);
+                      localStorage.setItem("biometric", String(val));
+                    }} />
                   </SettingRow>
                   <SettingRow label="Login Alerts" sub="Get notified of new sign-ins">
-                    <Toggle enabled={loginAlerts} onToggle={() => setLoginAlerts(!loginAlerts)} />
+                    <Toggle enabled={loginAlerts} onToggle={() => {
+                      const val = !loginAlerts;
+                      setLoginAlerts(val);
+                      localStorage.setItem("loginAlerts", String(val));
+                    }} />
                   </SettingRow>
                 </div>
 
                 <div className="bg-white border border-[var(--border)] rounded-2xl p-6" style={{ boxShadow: "var(--shadow-sm)" }}>
                   <p className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-4">Change Password</p>
                   <div className="flex flex-col gap-3">
-                    {["Current Password", "New Password", "Confirm New Password"].map(label => (
-                      <div key={label} className="flex flex-col gap-1.5">
-                        <label className="text-xs font-semibold text-[var(--muted-foreground)]">{label}</label>
-                        <input
-                          type="password"
-                          className="w-full border border-[var(--border)] rounded-xl px-4 py-2.5 text-sm bg-white focus:outline-none focus:border-[var(--primary)] transition-colors"
-                          placeholder="••••••••"
-                        />
+                    {passwordError && (
+                      <div className="p-3 border border-red-300 bg-red-50 text-red-700 text-xs font-semibold rounded-xl">
+                        {passwordError}
                       </div>
-                    ))}
+                    )}
+                    {passwordSaved && (
+                      <div className="p-3 border border-emerald-300 bg-emerald-50 text-emerald-700 text-xs font-semibold rounded-xl">
+                        Password successfully updated!
+                      </div>
+                    )}
+                    
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-[var(--muted-foreground)]">Current Password</label>
+                      <input
+                        type="password"
+                        value={currentPassword}
+                        onChange={(e) => setCurrentPassword(e.target.value)}
+                        className="w-full border border-[var(--border)] rounded-xl px-4 py-2.5 text-sm bg-white focus:outline-none focus:border-[var(--primary)] transition-colors"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-[var(--muted-foreground)]">New Password</label>
+                      <input
+                        type="password"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="w-full border border-[var(--border)] rounded-xl px-4 py-2.5 text-sm bg-white focus:outline-none focus:border-[var(--primary)] transition-colors"
+                      />
+                    </div>
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-xs font-semibold text-[var(--muted-foreground)]">Confirm New Password</label>
+                      <input
+                        type="password"
+                        value={confirmPassword}
+                        onChange={(e) => setConfirmPassword(e.target.value)}
+                        className="w-full border border-[var(--border)] rounded-xl px-4 py-2.5 text-sm bg-white focus:outline-none focus:border-[var(--primary)] transition-colors"
+                      />
+                    </div>
                     <div className="flex justify-end pt-1">
-                      <button className="px-6 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90"
+                      <button 
+                        onClick={handleChangePassword}
+                        disabled={savingPassword || !currentPassword || !newPassword}
+                        className="flex items-center gap-2 px-6 py-2.5 rounded-xl text-sm font-semibold text-white transition-all hover:opacity-90 disabled:opacity-50"
                         style={{ background: "linear-gradient(135deg,#0d9488,#0f766e)", boxShadow: "0 4px 12px rgba(13,148,136,0.25)" }}>
+                        {savingPassword && <Loader2 className="h-4 w-4 animate-spin" />}
                         Update Password
                       </button>
                     </div>
@@ -303,8 +483,7 @@ export default function SettingsPage() {
                 <div className="bg-white border border-[var(--border)] rounded-2xl p-6" style={{ boxShadow: "var(--shadow-sm)" }}>
                   <p className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-4">Active Sessions</p>
                   {[
-                    { device: "iPhone 15 Pro", location: "Lagos, NG", time: "Now", current: true },
-                    { device: "Chrome / macOS", location: "Abuja, NG", time: "2 hours ago", current: false },
+                    { device: "Current Device", location: "Unknown", time: "Now", current: true },
                   ].map((s, i) => (
                     <div key={i} className="flex items-center justify-between py-3 border-b border-[var(--border)] last:border-0">
                       <div className="flex items-center gap-3">
@@ -319,9 +498,6 @@ export default function SettingsPage() {
                           <p className="text-xs text-[var(--muted-foreground)]">{s.location} · {s.time}</p>
                         </div>
                       </div>
-                      {!s.current && (
-                        <button className="text-xs font-semibold text-[var(--danger)] hover:underline">Revoke</button>
-                      )}
                     </div>
                   ))}
                 </div>
@@ -334,31 +510,9 @@ export default function SettingsPage() {
                 <div className="bg-white border border-[var(--border)] rounded-2xl p-6" style={{ boxShadow: "var(--shadow-sm)" }}>
                   <SectionHeader icon={CreditCard} title="Payment Methods" subtitle="Manage your linked bank accounts." />
                   <div className="flex flex-col gap-3 mb-4">
-                    {[
-                      { bank: "GTBank", number: "****4521", name: "John Doe", primary: true },
-                      { bank: "Access Bank", number: "****8832", name: "John Doe", primary: false },
-                    ].map((acc, i) => (
-                      <div key={i} className={`flex items-center justify-between p-4 rounded-xl border transition-all ${acc.primary ? "border-[var(--primary)] bg-[var(--muted)]" : "border-[var(--border)]"}`}>
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-xl bg-white border border-[var(--border)] flex items-center justify-center shadow-sm">
-                            <CreditCard className="h-5 w-5 text-[var(--primary)]" />
-                          </div>
-                          <div>
-                            <p className="text-sm font-semibold">{acc.bank} — {acc.number}</p>
-                            <p className="text-xs text-[var(--muted-foreground)]">{acc.name}</p>
-                          </div>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          {acc.primary
-                            ? <span className="text-[10px] font-semibold text-[var(--primary)] bg-white border border-[var(--border)] px-2 py-0.5 rounded-full">Primary</span>
-                            : <button className="text-xs font-semibold text-[var(--muted-foreground)] hover:text-[var(--primary)] transition-colors">Set Primary</button>
-                          }
-                          <button className="text-xs font-semibold text-[var(--danger)] hover:underline">Remove</button>
-                        </div>
-                      </div>
-                    ))}
+                    <p className="text-sm text-[var(--muted-foreground)]">Integration with Paystack coming soon.</p>
                   </div>
-                  <button className="w-full py-3 rounded-xl border-2 border-dashed border-[var(--border)] text-sm font-semibold text-[var(--muted-foreground)] hover:border-[var(--primary)] hover:text-[var(--primary)] transition-colors flex items-center justify-center gap-2">
+                  <button disabled className="w-full py-3 rounded-xl border-2 border-dashed border-[var(--border)] text-sm font-semibold text-[var(--muted-foreground)] hover:border-[var(--primary)] hover:text-[var(--primary)] transition-colors flex items-center justify-center gap-2 opacity-50 cursor-not-allowed">
                     + Add New Bank Account
                   </button>
                 </div>
@@ -370,9 +524,9 @@ export default function SettingsPage() {
                     <span className="text-sm font-bold text-[var(--primary)]">₦500,000</span>
                   </div>
                   <div className="h-2 bg-[var(--muted)] rounded-full overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: "22%", background: "linear-gradient(90deg,#0d9488,#0f766e)" }} />
+                    <div className="h-full rounded-full" style={{ width: "0%", background: "linear-gradient(90deg,#0d9488,#0f766e)" }} />
                   </div>
-                  <p className="text-xs text-[var(--muted-foreground)] mt-2">₦110,000 used today of ₦500,000 limit</p>
+                  <p className="text-xs text-[var(--muted-foreground)] mt-2">₦0 used today of ₦500,000 limit</p>
                 </div>
               </div>
             )}
@@ -382,10 +536,18 @@ export default function SettingsPage() {
               <div className="bg-white border border-[var(--border)] rounded-2xl p-6" style={{ boxShadow: "var(--shadow-sm)" }}>
                 <SectionHeader icon={Eye} title="Privacy" subtitle="Control your visibility and data." />
                 <SettingRow label="Public Profile" sub="Anyone can view your profile and stats">
-                  <Toggle enabled={publicProfile} onToggle={() => setPublicProfile(!publicProfile)} />
+                  <Toggle enabled={publicProfile} onToggle={() => {
+                    const val = !publicProfile;
+                    setPublicProfile(val);
+                    localStorage.setItem("publicProfile", String(val));
+                  }} />
                 </SettingRow>
                 <SettingRow label="Show on Leaderboard" sub="Appear in public rankings">
-                  <Toggle enabled={showOnLeaderboard} onToggle={() => setShowOnLeaderboard(!showOnLeaderboard)} />
+                  <Toggle enabled={showOnLeaderboard} onToggle={() => {
+                    const val = !showOnLeaderboard;
+                    setShowOnLeaderboard(val);
+                    localStorage.setItem("showOnLeaderboard", String(val));
+                  }} />
                 </SettingRow>
                 <SettingRow label="Activity Status" sub="Show when you were last active">
                   <Toggle enabled={false} onToggle={() => {}} />
@@ -405,28 +567,32 @@ export default function SettingsPage() {
                 <div className="bg-white border border-[var(--border)] rounded-2xl p-6" style={{ boxShadow: "var(--shadow-sm)" }}>
                   <SectionHeader icon={Lock} title="Account" subtitle="Manage your account status." />
                   <SettingRow label="Member Since" sub="Account creation date">
-                    <span className="text-sm font-semibold text-[var(--muted-foreground)]">Jan 2024</span>
+                    <span className="text-sm font-semibold text-[var(--muted-foreground)]">
+                      {new Date(user.createdAt).toLocaleDateString("en-US", { month: "short", year: "numeric" })}
+                    </span>
                   </SettingRow>
                   <SettingRow label="Account Status" sub="Your current account standing">
                     <span className="text-xs font-semibold text-[var(--success)] bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">Active</span>
                   </SettingRow>
                   <SettingRow label="KYC Verification" sub="Identity verification status">
-                    <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">Pending</span>
+                    <span className="text-xs font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2.5 py-1 rounded-full">
+                      {user.kycTier > 0 ? "Verified" : "Pending"}
+                    </span>
                   </SettingRow>
                 </div>
 
                 <div className="bg-white border border-[var(--border)] rounded-2xl p-6" style={{ boxShadow: "var(--shadow-sm)" }}>
                   <p className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-4">Session</p>
-                  <Link href="/auth/login">
-                    <button className="w-full flex items-center gap-3 p-4 rounded-xl border border-[var(--border)] text-sm font-semibold text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors mb-3">
-                      <LogOut className="h-4 w-4 text-[var(--muted-foreground)]" /> Sign Out of All Devices
-                    </button>
-                  </Link>
-                  <Link href="/auth/login">
-                    <button className="w-full flex items-center gap-3 p-4 rounded-xl border border-[var(--border)] text-sm font-semibold text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors">
-                      <LogOut className="h-4 w-4 text-[var(--muted-foreground)]" /> Sign Out
-                    </button>
-                  </Link>
+                  <button 
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-3 p-4 rounded-xl border border-[var(--border)] text-sm font-semibold text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors mb-3">
+                    <LogOut className="h-4 w-4 text-[var(--muted-foreground)]" /> Sign Out of All Devices
+                  </button>
+                  <button 
+                    onClick={handleLogout}
+                    className="w-full flex items-center gap-3 p-4 rounded-xl border border-[var(--border)] text-sm font-semibold text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors">
+                    <LogOut className="h-4 w-4 text-[var(--muted-foreground)]" /> Sign Out
+                  </button>
                 </div>
 
                 <div className="bg-[var(--danger)]/5 border border-[var(--danger)]/20 rounded-2xl p-6">

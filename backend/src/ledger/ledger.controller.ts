@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Body, UseGuards, Request, Query } from '@nestjs/common';
 import { LedgerService } from './ledger.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
@@ -12,9 +12,22 @@ export class LedgerController {
     return this.ledgerService.getWallet(req.user.userId);
   }
 
+  @Post('deposit/initialize')
+  async initializeDeposit(@Request() req: any, @Body() body: { amount: number }) {
+    return this.ledgerService.initializeDeposit(req.user.userId, body.amount);
+  }
+
+  @Get('deposit/verify')
+  async verifyDeposit(@Request() req: any, @Query('reference') reference: string) {
+    return this.ledgerService.verifyDeposit(req.user.userId, reference);
+  }
+
+  // Kept for backward compatibility or direct simulation testing
   @Post('deposit')
   async simulateDeposit(@Request() req: any, @Body() body: { amount: number }) {
-    return this.ledgerService.simulateDeposit(req.user.userId, body.amount);
+    // Redirect to initialize for the new flow, or keep as a simple mock endpoint if desired.
+    // For now we will just throw an error so the frontend must use the new flow.
+    throw new Error('Please use /wallet/deposit/initialize');
   }
 
   @Post('withdraw')

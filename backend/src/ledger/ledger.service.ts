@@ -1,5 +1,7 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { Injectable, NotFoundException, BadRequestException, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import axios from 'axios';
+import { randomBytes } from 'crypto';
 
 @Injectable()
 export class LedgerService {
@@ -14,29 +16,129 @@ export class LedgerService {
     return wallet;
   }
 
-  async simulateDeposit(userId: string, amount: number) {
+  async initializeDeposit(userId: string, amount: number) {
     if (amount <= 0) throw new BadRequestException('Amount must be positive');
 
-    const wallet = await this.getWallet(userId);
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
 
-    const updatedWallet = await this.prisma.wallet.update({
-      where: { userId },
-      data: {
-        availableBalance: Number(wallet.availableBalance) + amount,
-        ledgerEntries: {
-          create: {
-            amount,
-            type: 'DEPOSIT',
-            description: 'Simulated Paystack Deposit'
+    const secretKey = process.env.PAYSTACK_SECRET_KEY;
+    let reference = '';
+    let authorization_url = '';
+
+    if (!secretKey) {
+      // Mock mode for local testing if no key is provided
+      reference = `mock_${randomBytes(8).toString('hex')}`;
+      authorization_url = `${process.env.FRONTEND_URL || 'http://localhost:3000'}/wallet/verify?reference=${reference}&mock=true`;
+    } else {
+      try {
+        const response = await axios.post(
+          'https://api.paystack.co/transaction/initialize',
+          {
+            email: user.email,
+            amount: amount * 100, // Paystack uses kobo
+            callback_url: `${process.env.FRONTEND_URL || 'http://localhost:3000'}/wallet/verify`,
+          },
+          {
+            headers: { Authorization: `Bearer ${secretKey}` },
           }
-        }
+        );
+        reference = response.data.data.reference;
+        authorization_url = response.data.data.authorization_url;
+      } catch (error: any) {
+        throw new InternalServerErrorException(
+          error.response?.data?.message || 'Failed to initialize Paystack transaction'
+        );
+      }
+    }
+
+    // Record the pending transaction
+    await this.prisma.transaction.create({
+      data: {
+        reference,
+        status: 'PENDING',
+        type: 'DEPOSIT',
+        metadata: { userId, amount },
       },
-      include: { ledgerEntries: { orderBy: { createdAt: 'desc' }, take: 1 } }
     });
 
-    return updatedWallet;
+    return { authorization_url, reference };
   }
 
+  async verifyDeposit(userId: string, reference: string) {
+    const transaction = await this.prisma.transaction.findUnique({ where: { reference } });
+    if (!transaction) throw new NotFoundException('Transaction not found');
+    
+    // Ensure the transaction belongs to this user
+    const meta = transaction.metadata as any;
+    if (meta?.userId !== userId) throw new BadRequestException('Transaction does not belong to this user');
+
+    if (transaction.status === 'SUCCESS') {
+      return { message: 'Transaction already verified and processed', success: true };
+    }
+
+    const secretKey = process.env.PAYSTACK_SECRET_KEY;
+    let isSuccess = false;
+    let verifiedAmount = 0;
+
+    if (reference.startsWith('mock_')) {
+      // Mock mode verify
+      isSuccess = true;
+      verifiedAmount = meta.amount;
+    } else {
+      if (!secretKey) throw new InternalServerErrorException('Paystack Secret Key is missing');
+      try {
+        const response = await axios.get(`https://api.paystack.co/transaction/verify/${reference}`, {
+          headers: { Authorization: `Bearer ${secretKey}` },
+        });
+        isSuccess = response.data.data.status === 'success';
+        verifiedAmount = response.data.data.amount / 100; // convert back from kobo
+      } catch (error: any) {
+        throw new InternalServerErrorException(
+          error.response?.data?.message || 'Failed to verify transaction'
+        );
+      }
+    }
+
+    if (isSuccess) {
+      // Process successful transaction
+      const wallet = await this.getWallet(userId);
+      await this.prisma.$transaction(async (tx) => {
+        // Update transaction status
+        const updatedTx = await tx.transaction.update({
+          where: { id: transaction.id },
+          data: { status: 'SUCCESS' },
+        });
+
+        // Credit wallet and create ledger entry
+        await tx.wallet.update({
+          where: { id: wallet.id },
+          data: {
+            availableBalance: Number(wallet.availableBalance) + verifiedAmount,
+            ledgerEntries: {
+              create: {
+                transactionId: updatedTx.id,
+                amount: verifiedAmount,
+                type: 'DEPOSIT',
+                description: 'Paystack Deposit',
+              },
+            },
+          },
+        });
+      });
+
+      return { message: 'Deposit successful', success: true, amount: verifiedAmount };
+    } else {
+      // Transaction failed on Paystack side
+      await this.prisma.transaction.update({
+        where: { id: transaction.id },
+        data: { status: 'FAILED' },
+      });
+      return { message: 'Deposit failed or pending', success: false };
+    }
+  }
+
+  // Keep for simple manual tests, or if we need standard withdrawal later
   async simulateWithdrawal(userId: string, amount: number) {
     if (amount <= 0) throw new BadRequestException('Amount must be positive');
 

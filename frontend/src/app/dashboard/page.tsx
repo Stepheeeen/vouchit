@@ -1,23 +1,12 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import {
   Plus, Users, ArrowUpRight, ArrowDownRight,
-  Flame, TrendingUp, ChevronRight, ShieldCheck, Clock
+  Flame, TrendingUp, ChevronRight, ShieldCheck, Clock, Loader2
 } from "lucide-react";
-import { Badge } from "@/components/ui/badge";
-
-const wagers = [
-  { id: "vch_123", description: "Arsenal to beat Chelsea by 2 goals margin",   status: "ACTIVE",   myStake: 5000,  pot: 10000, opponent: "John D.", expiresIn: "23h 45m" },
-  { id: "vch_456", description: "I will finish the marathon under 4 hours",     status: "PENDING",  myStake: 2000,  pot: 2000,  opponent: null,       expiresIn: "2d 12h"  },
-  { id: "vch_789", description: "Chelsea will finish top 4 this season",        status: "ACTIVE",   myStake: 7500,  pot: 15000, opponent: "Kola S.",  expiresIn: "45d"     },
-];
-
-const activity = [
-  { type: "win",     label: "Won Wager: Lakers vs Nuggets",  amount: "+₦8,000",  time: "Today, 10:42 AM",   icon: ArrowUpRight   },
-  { type: "deposit", label: "Wallet Funded via Paystack",    amount: "+₦10,000", time: "Yesterday, 2:30 PM", icon: ArrowDownRight },
-  { type: "loss",    label: "Lost Wager: Man Utd vs City",   amount: "−₦3,000",  time: "Mon, 9:15 AM",       icon: ArrowDownRight },
-];
 
 const quickActions = [
   { href: "/vouch/create", icon: Plus,       label: "Create Wager", sub: "Start a new bet"   },
@@ -27,6 +16,78 @@ const quickActions = [
 ];
 
 export default function Home() {
+  const router = useRouter();
+  const [loading, setLoading] = useState(true);
+  const [user, setUser] = useState<any>(null);
+  const [wagers, setWagers] = useState<any[]>([]);
+
+  useEffect(() => {
+    const load = async () => {
+      try {
+        const { userApi, wagersApi } = await import("@/lib/api");
+        const [profile, myWagers] = await Promise.all([
+          userApi.getProfile(),
+          wagersApi.getMy().catch(() => []),
+        ]);
+        setUser(profile);
+        setWagers(myWagers);
+      } catch {
+        router.push("/auth/login");
+      } finally {
+        setLoading(false);
+      }
+    };
+    load();
+  }, [router]);
+
+  if (loading) {
+    return (
+      <div className="flex-1 flex items-center justify-center">
+        <Loader2 className="h-8 w-8 animate-spin text-[var(--primary)]" />
+      </div>
+    );
+  }
+
+  // Active or Pending wagers
+  const activeWagers = wagers.filter(w => w.status === "ACTIVE" || w.status === "PENDING_FUNDING");
+  
+  // Settled wagers for stats
+  const settledWagers = wagers.filter(w => w.status === "SETTLED");
+  const wonWagers = settledWagers.filter(w => w.winnerId === user.id);
+  const lostWagers = settledWagers.filter(w => w.winnerId && w.winnerId !== user.id);
+  
+  const winRate = settledWagers.length > 0 ? Math.round((wonWagers.length / settledWagers.length) * 100) : 0;
+  const totalWonAmount = wonWagers.reduce((sum, w) => sum + (Number(w.totalPot) * 0.975), 0);
+  const escrowAmount = Number(user.escrowBalance) || 0;
+  const availableBalance = Number(user.availableBalance) || 0;
+
+  // Generate recent activity from wagers
+  const activity = wagers
+    .filter(w => w.status === "SETTLED" || w.status === "ACTIVE")
+    .sort((a, b) => new Date(b.updatedAt || b.createdAt).getTime() - new Date(a.updatedAt || a.createdAt).getTime())
+    .slice(0, 5)
+    .map(w => {
+      const myParticipant = w.participants?.find((p: any) => p.userId === user.id);
+      if (w.status === "SETTLED") {
+        const isWinner = w.winnerId === user.id;
+        return {
+          type: isWinner ? "win" : "loss",
+          label: `${isWinner ? "Won" : "Lost"} Wager: ${w.description.slice(0, 20)}...`,
+          amount: isWinner ? `+₦${(Number(w.totalPot) * 0.975).toLocaleString()}` : `−₦${Number(myParticipant?.amount || 0).toLocaleString()}`,
+          time: new Date(w.updatedAt || w.createdAt).toLocaleDateString(),
+          icon: isWinner ? ArrowUpRight : ArrowDownRight
+        };
+      } else {
+        return {
+          type: "deposit",
+          label: `Staked on: ${w.description.slice(0, 20)}...`,
+          amount: `−₦${Number(myParticipant?.amount || 0).toLocaleString()}`,
+          time: new Date(w.createdAt).toLocaleDateString(),
+          icon: ArrowDownRight
+        };
+      }
+    });
+
   return (
     <div className="flex-1 flex flex-col">
 
@@ -53,23 +114,23 @@ export default function Home() {
             <div className="relative z-10">
               <p className="text-white/70 text-[10px] font-semibold uppercase tracking-widest mb-1">Available Balance</p>
               <p className="text-4xl md:text-5xl lg:text-6xl font-bold text-white tracking-tight mb-6">
-                ₦24,500<span className="text-white/60 text-2xl">.00</span>
+                ₦{availableBalance.toLocaleString()}
               </p>
 
               <div className="flex flex-wrap items-center gap-4 bg-white/10 rounded-xl p-4">
                 <div className="flex-1 min-w-[100px]">
                   <p className="text-white/60 text-[10px] uppercase tracking-widest font-semibold">In Escrow</p>
-                  <p className="text-white font-semibold text-base mt-0.5">₦12,000.00</p>
+                  <p className="text-white font-semibold text-base mt-0.5">₦{escrowAmount.toLocaleString()}</p>
                 </div>
                 <div className="h-8 w-px bg-white/20 hidden sm:block" />
                 <div className="flex-1 min-w-[100px]">
                   <p className="text-white/60 text-[10px] uppercase tracking-widest font-semibold">All-Time Won</p>
-                  <p className="text-white font-semibold text-base mt-0.5">₦48,500.00</p>
+                  <p className="text-white font-semibold text-base mt-0.5">₦{totalWonAmount.toLocaleString()}</p>
                 </div>
                 <div className="h-8 w-px bg-white/20 hidden sm:block" />
                 <div className="flex-1 min-w-[100px]">
                   <p className="text-white/60 text-[10px] uppercase tracking-widest font-semibold">Win Rate</p>
-                  <p className="text-white font-semibold text-base mt-0.5">80%</p>
+                  <p className="text-white font-semibold text-base mt-0.5">{winRate}%</p>
                 </div>
                 <Link href="/wallet">
                   <button className="bg-white text-[var(--primary)] text-xs font-bold uppercase tracking-widest px-5 py-2.5 rounded-xl hover:bg-[var(--muted)] transition-colors flex items-center gap-2 shadow-sm shrink-0">
@@ -114,46 +175,57 @@ export default function Home() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-1 2xl:grid-cols-2 gap-4">
-              {wagers.map((w) => (
-                <Link key={w.id} href={`/vouch/${w.id}`}>
-                  <div
-                    className="group bg-white border border-[var(--border)] rounded-2xl p-5 hover:border-[var(--primary)] hover:shadow-md transition-all cursor-pointer h-full flex flex-col justify-between gap-4"
-                    style={{ boxShadow: "var(--shadow-sm)" }}
-                  >
-                    <div className="flex justify-between items-start gap-3">
-                      <p className="font-semibold text-sm leading-snug text-[var(--foreground)] line-clamp-2 flex-1">
-                        {w.description}
-                      </p>
-                      {w.status === "ACTIVE" ? (
-                        <span className="shrink-0 flex items-center gap-1 text-[10px] font-semibold text-[var(--success)] bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                          <span className="h-1.5 w-1.5 rounded-full bg-[var(--success)] animate-pulse" />
-                          Live
-                        </span>
-                      ) : (
-                        <span className="shrink-0 flex items-center gap-1 text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
-                          <Clock className="h-3 w-3" />
-                          Waiting
-                        </span>
-                      )}
-                    </div>
+              {activeWagers.length === 0 ? (
+                <div className="col-span-full py-12 flex flex-col items-center justify-center text-[var(--muted-foreground)] bg-white border border-[var(--border)] rounded-2xl border-dashed">
+                  <p className="text-sm font-medium">You have no active wagers.</p>
+                  <Link href="/vouch/create" className="text-[var(--primary)] text-xs mt-2 font-bold uppercase tracking-widest hover:underline">Create One Now</Link>
+                </div>
+              ) : activeWagers.map((w) => {
+                const myParticipant = w.participants?.find((p: any) => p.userId === user.id);
+                const expiresMs = new Date(w.expiresAt).getTime() - Date.now();
+                const expiresLabel = expiresMs > 0 ? `${Math.round(expiresMs / 3600000)}h` : "Expired";
 
-                    <div className="flex justify-between items-end pt-3 border-t border-[var(--border)]">
-                      <div>
-                        <p className="text-[10px] text-[var(--muted-foreground)] font-semibold uppercase tracking-wider">Your Stake</p>
-                        <p className="font-semibold text-base text-[var(--foreground)] mt-0.5">₦{w.myStake.toLocaleString()}</p>
+                return (
+                  <Link key={w.id} href={`/vouch/${w.id}`}>
+                    <div
+                      className="group bg-white border border-[var(--border)] rounded-2xl p-5 hover:border-[var(--primary)] hover:shadow-md transition-all cursor-pointer h-full flex flex-col justify-between gap-4"
+                      style={{ boxShadow: "var(--shadow-sm)" }}
+                    >
+                      <div className="flex justify-between items-start gap-3">
+                        <p className="font-semibold text-sm leading-snug text-[var(--foreground)] line-clamp-2 flex-1">
+                          {w.description}
+                        </p>
+                        {w.status === "ACTIVE" ? (
+                          <span className="shrink-0 flex items-center gap-1 text-[10px] font-semibold text-[var(--success)] bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                            <span className="h-1.5 w-1.5 rounded-full bg-[var(--success)] animate-pulse" />
+                            Live
+                          </span>
+                        ) : (
+                          <span className="shrink-0 flex items-center gap-1 text-[10px] font-semibold text-amber-600 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full">
+                            <Clock className="h-3 w-3" />
+                            Waiting
+                          </span>
+                        )}
                       </div>
-                      <div className="text-center">
-                        <p className="text-[10px] text-[var(--muted-foreground)] font-semibold uppercase tracking-wider">Pot</p>
-                        <p className="font-bold text-xl text-[var(--primary)] mt-0.5">₦{(w.pot / 1000)}k</p>
-                      </div>
-                      <div className="text-right">
-                        <p className="text-[10px] text-[var(--muted-foreground)] font-semibold uppercase tracking-wider">Expires</p>
-                        <p className="font-semibold text-sm text-[var(--foreground)] mt-0.5">{w.expiresIn}</p>
+
+                      <div className="flex justify-between items-end pt-3 border-t border-[var(--border)]">
+                        <div>
+                          <p className="text-[10px] text-[var(--muted-foreground)] font-semibold uppercase tracking-wider">Your Stake</p>
+                          <p className="font-semibold text-base text-[var(--foreground)] mt-0.5">₦{Number(myParticipant?.amount || 0).toLocaleString()}</p>
+                        </div>
+                        <div className="text-center">
+                          <p className="text-[10px] text-[var(--muted-foreground)] font-semibold uppercase tracking-wider">Pot</p>
+                          <p className="font-bold text-xl text-[var(--primary)] mt-0.5">₦{(Number(w.totalPot) / 1000).toFixed(0)}k</p>
+                        </div>
+                        <div className="text-right">
+                          <p className="text-[10px] text-[var(--muted-foreground)] font-semibold uppercase tracking-wider">Expires</p>
+                          <p className="font-semibold text-sm text-[var(--foreground)] mt-0.5">{expiresLabel}</p>
+                        </div>
                       </div>
                     </div>
-                  </div>
-                </Link>
-              ))}
+                  </Link>
+                );
+              })}
             </div>
           </section>
 
@@ -168,9 +240,9 @@ export default function Home() {
               <p className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-4">Your Stats</p>
               <div className="grid grid-cols-3 gap-3 text-center divide-x divide-[var(--border)]">
                 {[
-                  { label: "Won",    value: "12",  color: "text-[var(--primary)]" },
-                  { label: "Lost",   value: "3",   color: "text-[var(--foreground)]" },
-                  { label: "Rate",   value: "80%", color: "text-[var(--success)]" },
+                  { label: "Won",    value: wonWagers.length.toString(),  color: "text-[var(--primary)]" },
+                  { label: "Lost",   value: lostWagers.length.toString(),   color: "text-[var(--foreground)]" },
+                  { label: "Rate",   value: `${winRate}%`, color: "text-[var(--success)]" },
                 ].map((s) => (
                   <div key={s.label} className="px-2">
                     <p className={`font-bold text-2xl ${s.color}`}>{s.value}</p>
@@ -193,7 +265,9 @@ export default function Home() {
                 className="bg-white border border-[var(--border)] rounded-2xl overflow-hidden"
                 style={{ boxShadow: "var(--shadow-sm)" }}
               >
-                {activity.map((a, i) => (
+                {activity.length === 0 ? (
+                  <div className="p-4 text-center text-sm text-[var(--muted-foreground)]">No recent activity.</div>
+                ) : activity.map((a, i) => (
                   <div
                     key={i}
                     className={`flex items-center gap-3 p-4 hover:bg-[var(--muted)] transition-colors ${i < activity.length - 1 ? "border-b border-[var(--border)]" : ""}`}
