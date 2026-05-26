@@ -16,7 +16,7 @@ model User {
   emailVerified Boolean  @default(false)
   otp          String?
   otpExpiresAt DateTime?
-  phone        String?   @unique
+  phone        String?
   kycTier      Int       @default(0) // 0: basic, 1: BVN/NIN verified
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt

@@ -20,6 +20,15 @@ export class UsersService {
   }
 
   async updateMe(id: string, data: { displayName?: string; bio?: string; phone?: string }) {
+    if (data.phone) {
+      const existing = await this.prisma.user.findFirst({
+        where: { phone: data.phone, id: { not: id } },
+      });
+      if (existing) {
+        throw new BadRequestException('Phone number is already in use');
+      }
+    }
+
     const updated = await this.prisma.user.update({
       where: { id },
       data: {
