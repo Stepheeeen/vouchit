@@ -11,8 +11,6 @@ export class UsersService {
       where: { id },
       include: {
         wallet: true,
-        wagersCreated: { include: { participants: true } },
-        wagerParticipants: { include: { wager: true } },
       },
     });
     if (!user) throw new NotFoundException('User not found');

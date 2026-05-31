@@ -75,7 +75,7 @@ export default function AppNav() {
       }
     };
     load();
-  }, [pathname]);
+  }, []);
 
   useEffect(() => {
     if (user) {

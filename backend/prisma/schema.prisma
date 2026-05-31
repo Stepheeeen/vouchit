@@ -52,6 +52,8 @@ model LedgerEntry {
   type          String       // 'DEPOSIT', 'WITHDRAWAL', 'ESCROW_LOCK', 'ESCROW_RELEASE', 'WIN', 'FEE'
   description   String?
   createdAt     DateTime     @default(now())
+
+  @@index([walletId])
 }
 
 model Transaction {
@@ -81,6 +83,9 @@ model Wager {
 
   participants WagerParticipant[]
   dispute      Dispute?
+
+  @@index([status, expiresAt])
+  @@index([creatorId])
 }
 
 model WagerParticipant {
@@ -97,6 +102,7 @@ model WagerParticipant {
   updatedAt   DateTime @updatedAt
 
   @@unique([wagerId, userId])
+  @@index([userId])
 }
 
 model Dispute {
@@ -131,6 +137,8 @@ model Notification {
   message   String
   readAt    DateTime?
   createdAt DateTime @default(now())
+
+  @@index([userId])
 }
 
 model BankAccount {

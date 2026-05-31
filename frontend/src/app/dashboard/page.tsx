@@ -58,8 +58,8 @@ export default function Home() {
   
   const winRate = settledWagers.length > 0 ? Math.round((wonWagers.length / settledWagers.length) * 100) : 0;
   const totalWonAmount = wonWagers.reduce((sum, w) => sum + (Number(w.totalPot) * 0.975), 0);
-  const escrowAmount = Number(user.escrowBalance) || 0;
-  const availableBalance = Number(user.availableBalance) || 0;
+  const escrowAmount = Number(user.wallet?.escrowBalance) || 0;
+  const availableBalance = Number(user.wallet?.availableBalance) || 0;
 
   // Generate recent activity from wagers
   const activity = wagers
