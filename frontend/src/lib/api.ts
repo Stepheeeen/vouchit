@@ -83,6 +83,30 @@ export const disputesApi = {
   create: (data: { wagerId: string; reason: string; proofType?: string; mediaUrl?: string }) =>
     fetchApi('/disputes', { method: 'POST', body: JSON.stringify(data) }),
   getByWagerId: (wagerId: string) => fetchApi(`/disputes/${wagerId}`),
+  getAll: () => fetchApi('/disputes'),
+  resolve: (id: string, resolution: 'WINNER_A' | 'WINNER_B' | 'REFUND') =>
+    fetchApi(`/disputes/${id}/resolve`, { method: 'POST', body: JSON.stringify({ resolution }) }),
+  uploadFile: async (file: File) => {
+    const cloudName = process.env.NEXT_PUBLIC_CLOUDINARY_CLOUD_NAME || 'dnv9z6wnf';
+    const uploadPreset = process.env.NEXT_PUBLIC_CLOUDINARY_UPLOAD_PRESET || 'vouchit';
+
+    const formData = new FormData();
+    formData.append('file', file);
+    formData.append('upload_preset', uploadPreset);
+
+    const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudName}/auto/upload`, {
+      method: 'POST',
+      body: formData,
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(errorData.error?.message || `Cloudinary upload failed: ${response.status}`);
+    }
+
+    const resData = await response.json();
+    return { url: resData.secure_url };
+  },
 };
 
 export const leaderboardApi = {

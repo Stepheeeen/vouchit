@@ -18,6 +18,7 @@ export default function DisputePage() {
   const [mediaUrl, setMediaUrl] = useState("");
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
 
+  const [isUploading, setIsUploading] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [submitted, setSubmitted] = useState(false);
   const [error, setError] = useState("");
@@ -200,7 +201,15 @@ export default function DisputePage() {
               ))}
             </div>
             {(proofType === "screenshot" || proofType === "document") && (
-              selectedFile ? (
+              isUploading ? (
+                <div className="border border-[var(--border)] rounded-2xl p-6 flex items-center gap-3 bg-[var(--muted)] w-full">
+                  <Loader2 className="h-5 w-5 animate-spin text-[var(--primary)] shrink-0" />
+                  <div className="min-w-0 flex-1">
+                    <p className="text-sm font-semibold text-[var(--foreground)]">Uploading proof...</p>
+                    <p className="text-xs text-[var(--muted-foreground)] truncate max-w-[200px]">{selectedFile?.name}</p>
+                  </div>
+                </div>
+              ) : selectedFile ? (
                 <div className="border border-[var(--border)] rounded-2xl p-6 flex items-center justify-between bg-white w-full">
                   <div className="flex items-center gap-3">
                     <div className="h-10 w-10 rounded-xl bg-emerald-50 border border-emerald-200 flex items-center justify-center shrink-0">
@@ -232,11 +241,23 @@ export default function DisputePage() {
                     id="file-input" 
                     className="hidden" 
                     accept={proofType === "screenshot" ? "image/*" : ".pdf,.doc,.docx,.txt"}
-                    onChange={(e) => {
+                    onChange={async (e) => {
                       const file = e.target.files?.[0];
                       if (file) {
                         setSelectedFile(file);
-                        setMediaUrl(`https://vouchit-proofs.s3.amazonaws.com/proofs/${Date.now()}_${file.name}`);
+                        setIsUploading(true);
+                        setError("");
+                        try {
+                          const { disputesApi } = await import("@/lib/api");
+                          const res = await disputesApi.uploadFile(file);
+                          setMediaUrl(res.url);
+                        } catch (err: any) {
+                          setError(err.message || "Failed to upload file. Please try again.");
+                          setSelectedFile(null);
+                          setMediaUrl("");
+                        } finally {
+                          setIsUploading(false);
+                        }
                       }
                     }}
                   />
@@ -310,12 +331,14 @@ export default function DisputePage() {
           )}
           <button
             onClick={() => step < 2 ? setStep((s) => s + 1) : handleSubmit()}
-            disabled={(step === 0 && !canProceedStep0) || isSubmitting}
+            disabled={(step === 0 && !canProceedStep0) || (step === 1 && isUploading) || isSubmitting}
             className="flex-[2] py-4 rounded-2xl font-bold text-sm text-white uppercase tracking-widest transition-opacity hover:opacity-90 disabled:opacity-50 flex items-center justify-center gap-2"
             style={{ background: "linear-gradient(135deg,#0d9488,#0f766e)", boxShadow: "0 4px 20px rgba(13,148,136,0.3)" }}
           >
             {isSubmitting ? (
               <><Loader2 className="h-4 w-4 animate-spin" /> Filing…</>
+            ) : isUploading ? (
+              "Uploading..."
             ) : step < 2 ? "Continue" : "File Dispute"}
           </button>
         </div>

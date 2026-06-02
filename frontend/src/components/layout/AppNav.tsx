@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Flame, Wallet,
-  User, TrendingUp, Bell, Plus, ChevronDown, Settings
+  User, TrendingUp, Bell, Plus, ChevronDown, Settings, Shield
 } from "lucide-react";
 
 const NAV_LINKS = [
@@ -91,6 +91,16 @@ export default function AppNav() {
   const isActive = (href: string) =>
     href === "/" ? pathname === "/" : pathname.startsWith(href);
 
+  const links = [...NAV_LINKS];
+  if (user && user.role === "ADMIN") {
+    const profileIdx = links.findIndex((l) => l.href === "/profile");
+    if (profileIdx !== -1) {
+      links.splice(profileIdx, 0, { href: "/admin/disputes", label: "Admin", icon: Shield });
+    } else {
+      links.push({ href: "/admin/disputes", label: "Admin", icon: Shield });
+    }
+  }
+
   return (
     <>
       {/* ── DESKTOP TOP NAV (md+) ─────────────────────────── */}
@@ -102,7 +112,7 @@ export default function AppNav() {
 
         {/* Nav links */}
         <nav className="flex items-center gap-1 md:px-2 lg:px-4 flex-1 overflow-x-auto no-scrollbar">
-          {NAV_LINKS.filter(item => item.href !== "/profile").map((item) => {
+          {links.filter(item => item.href !== "/profile").map((item) => {
             const active = isActive(item.href);
             return (
               <Link
@@ -241,7 +251,7 @@ export default function AppNav() {
       {/* ── MOBILE BOTTOM NAV (< md) ─────────────────────── */}
       <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/90 backdrop-blur-md border-t border-[var(--border)]">
         <div className="flex justify-around items-center px-2 py-2">
-          {NAV_LINKS.map((item) => {
+          {links.map((item) => {
             const active = isActive(item.href);
             return (
               <Link

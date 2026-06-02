@@ -87,7 +87,7 @@ export class AuthService {
       data: { emailVerified: true, otp: null, otpExpiresAt: null },
     });
 
-    const payload = { sub: user.id, email: user.email };
+    const payload = { sub: user.id, email: user.email, role: user.role };
     const token = this.jwtService.sign(payload);
 
     return {
@@ -105,7 +105,7 @@ export class AuthService {
 
     if (!user.emailVerified) throw new UnauthorizedException('Email not verified. Please verify your email first.');
 
-    const payload = { sub: user.id, email: user.email };
+    const payload = { sub: user.id, email: user.email, role: user.role };
     const token = this.jwtService.sign(payload);
 
     return {
