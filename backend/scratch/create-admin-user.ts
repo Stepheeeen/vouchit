@@ -32,7 +32,7 @@ async function main() {
         role: 'ADMIN',
         wallet: {
           create: {
-            availableBalance: 50000, // ₦50,000 to test
+            availableBalance: 0,
             escrowBalance: 0,
             lockedBalance: 0,
           },
