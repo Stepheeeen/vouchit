@@ -3,6 +3,7 @@ import { Poppins } from "next/font/google";
 import "./globals.css";
 import NavWrapper from "@/components/layout/NavWrapper";
 import { Toaster } from "sonner";
+import { Web3Provider } from "@/context/Web3Context";
 
 const poppins = Poppins({
   subsets: ["latin"],
@@ -47,14 +48,16 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning className={`${poppins.variable} h-full antialiased`}>
       <body suppressHydrationWarning className="flex flex-col min-h-screen bg-[var(--background)] text-[var(--foreground)] font-sans">
-        {/* Global nav conditionally rendered */}
-        <NavWrapper />
+        <Web3Provider>
+          {/* Global nav conditionally rendered */}
+          <NavWrapper />
 
-        {/* Page content — offset for fixed desktop top nav + mobile bottom nav */}
-        <div className="flex-1 w-full flex flex-col pb-[68px] md:pb-0 md:pt-[65px]">
-          {children}
-        </div>
-        <Toaster richColors closeButton position="top-right" />
+          {/* Page content — offset for fixed desktop top nav + mobile bottom nav */}
+          <div className="flex-1 w-full flex flex-col pb-[68px] md:pb-0 md:pt-[65px]">
+            {children}
+          </div>
+          <Toaster richColors closeButton position="top-right" />
+        </Web3Provider>
       </body>
     </html>
   );

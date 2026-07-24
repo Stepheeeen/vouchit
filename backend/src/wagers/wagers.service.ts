@@ -66,31 +66,42 @@ export class WagersService {
     }
   }
 
-  async createWager(userId: string, description: string, amount: number, isSymmetric?: boolean, expiryDays?: number) {
+  async createWager(
+    userId: string,
+    description: string,
+    amount: number,
+    isSymmetric?: boolean,
+    expiryDays?: number,
+    isWeb3?: boolean,
+    contractWagerId?: string,
+    tokenAddress?: string,
+  ) {
     if (amount <= 0) throw new BadRequestException('Amount must be positive');
 
-    // Check wallet balance
-    const wallet = await this.prisma.wallet.findUnique({ where: { userId } });
-    if (!wallet) throw new BadRequestException('Wallet not found');
-    if (Number(wallet.availableBalance) < amount) {
-      throw new BadRequestException('Insufficient balance. Please fund your wallet first.');
-    }
+    if (!isWeb3) {
+      // For Web2 wagers, check wallet balance and lock escrow
+      const wallet = await this.prisma.wallet.findUnique({ where: { userId } });
+      if (!wallet) throw new BadRequestException('Wallet not found');
+      if (Number(wallet.availableBalance) < amount) {
+        throw new BadRequestException('Insufficient balance. Please fund your wallet first.');
+      }
 
-    // Deduct from available, add to escrow, create ledger entry
-    await this.prisma.wallet.update({
-      where: { userId },
-      data: {
-        availableBalance: Number(wallet.availableBalance) - amount,
-        escrowBalance: Number(wallet.escrowBalance) + amount,
-        ledgerEntries: {
-          create: {
-            amount: -amount,
-            type: 'ESCROW_LOCK',
-            description: `Stake locked for wager: ${description.slice(0, 40)}`,
+      // Deduct from available, add to escrow, create ledger entry
+      await this.prisma.wallet.update({
+        where: { userId },
+        data: {
+          availableBalance: Number(wallet.availableBalance) - amount,
+          escrowBalance: Number(wallet.escrowBalance) + amount,
+          ledgerEntries: {
+            create: {
+              amount: -amount,
+              type: 'ESCROW_LOCK',
+              description: `Stake locked for wager: ${description.slice(0, 40)}`,
+            },
           },
         },
-      },
-    });
+      });
+    }
 
     const days = expiryDays && [1, 3, 7, 30].includes(expiryDays) ? expiryDays : 1;
     const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
@@ -100,8 +111,11 @@ export class WagersService {
         creatorId: userId,
         description,
         totalPot: amount,
-        status: 'PENDING_FUNDING',
+        status: isWeb3 ? 'ACTIVE' : 'PENDING_FUNDING',
         isSymmetric: isSymmetric !== false,
+        isWeb3: isWeb3 || false,
+        contractWagerId: contractWagerId || null,
+        tokenAddress: tokenAddress || null,
         expiresAt,
         participants: {
           create: {

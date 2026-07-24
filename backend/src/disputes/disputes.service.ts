@@ -1,12 +1,14 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { Web3Service } from '../web3/web3.service';
 
 @Injectable()
 export class DisputesService {
   constructor(
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
+    private web3Service: Web3Service,
   ) {}
 
   async createDispute(
@@ -255,6 +257,12 @@ export class DisputesService {
         }
       } catch (err) {
         console.error('Failed to send dispute notifications:', err);
+      }
+
+      // If Web3 wager, trigger on-chain smart contract dispute resolution
+      if (wager.isWeb3 && wager.contractWagerId) {
+        const winnerAddress = winnerParticipant.user?.web3Address || '0x0000000000000000000000000000000000000000';
+        await this.web3Service.resolveOnChainDispute(wager.id, wager.contractWagerId, winnerAddress, 1);
       }
 
       return { status: 'RESOLVED', resolution, winnerId: winnerUserId, message: `Dispute resolved. Payout to winner processed successfully.` };

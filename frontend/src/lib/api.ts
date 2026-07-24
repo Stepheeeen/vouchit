@@ -42,8 +42,8 @@ export const authApi = {
 };
 
 export const wagersApi = {
-  create: (description: string, amount: number, isSymmetric?: boolean, expiryDays?: number) =>
-    fetchApi('/wagers', { method: 'POST', body: JSON.stringify({ description, amount, isSymmetric, expiryDays }) }),
+  create: (description: string, amount: number, isSymmetric?: boolean, expiryDays?: number, isWeb3?: boolean, contractWagerId?: string, tokenAddress?: string) =>
+    fetchApi('/wagers', { method: 'POST', body: JSON.stringify({ description, amount, isSymmetric, expiryDays, isWeb3, contractWagerId, tokenAddress }) }),
   getAll: () => fetchApi('/wagers'),
   getById: (id: string) => fetchApi(`/wagers/${id}`),
   getMy: () => fetchApi('/wagers/my'),
@@ -61,6 +61,12 @@ export const userApi = {
     fetchApi('/users/me/password', { method: 'PATCH', body: JSON.stringify({ currentPassword, newPassword }) }),
   verifyKYC: (type: 'BVN' | 'NIN', number: string) =>
     fetchApi('/users/kyc', { method: 'POST', body: JSON.stringify({ type, number }) }),
+};
+
+export const web3Api = {
+  linkWallet: (address: string, signature: string) =>
+    fetchApi('/web3/link-wallet', { method: 'POST', body: JSON.stringify({ address, signature }) }),
+  unlinkWallet: () => fetchApi('/web3/unlink-wallet', { method: 'DELETE' }),
 };
 
 export const walletApi = {

@@ -5,8 +5,9 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Flame, Wallet,
-  User, TrendingUp, Bell, Plus, ChevronDown, Settings, Shield
+  User, TrendingUp, Bell, Plus, ChevronDown, Settings, Shield, Link2
 } from "lucide-react";
+import { useWeb3 } from "@/context/Web3Context";
 
 const NAV_LINKS = [
   { href: "/dashboard",   label: "Dashboard",  icon: LayoutDashboard },
@@ -28,6 +29,7 @@ function getInitials(name: string) {
 export default function AppNav() {
   const pathname = usePathname();
   const [user, setUser] = useState<any>(null);
+  const { account, isConnected, isConnecting, linkWalletToBackend } = useWeb3();
 
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -135,6 +137,23 @@ export default function AppNav() {
 
         {/* Right actions */}
         <div className="flex items-center gap-2 md:px-3 lg:px-6 py-3 border-l border-[var(--border)] shrink-0">
+          {/* Web3 Wallet Connect */}
+          <button
+            onClick={linkWalletToBackend}
+            disabled={isConnecting}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border border-[var(--border)] bg-white hover:bg-[var(--muted)] transition-colors shrink-0 cursor-pointer"
+            title={isConnected ? `Connected Wallet: ${account}` : "Connect Web3 Wallet"}
+          >
+            <Link2 className={`h-3.5 w-3.5 ${isConnected ? "text-emerald-500" : "text-slate-400"}`} />
+            <span className="hidden lg:inline text-[var(--foreground)]">
+              {isConnected
+                ? `${account?.slice(0, 6)}...${account?.slice(-4)}`
+                : isConnecting
+                ? "Connecting..."
+                : "Connect Wallet"}
+            </span>
+          </button>
+
           {/* Create CTA */}
           <Link href="/vouch/create">
             <button

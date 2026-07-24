@@ -17,6 +17,7 @@ model User {
   otp          String?
   otpExpiresAt DateTime?
   phone        String?
+  web3Address  String?   @unique
   kycTier      Int       @default(0) // 0: basic, 1: BVN/NIN verified
   role         String    @default("USER") // "USER", "ADMIN"
   createdAt    DateTime  @default(now())
@@ -31,14 +32,16 @@ model User {
 }
 
 model Wallet {
-  id               String   @id @default(auto()) @map("_id") @db.ObjectId
-  userId           String   @unique @db.ObjectId
-  user             User     @relation(fields: [userId], references: [id])
-  availableBalance Float    @default(0.00)
-  escrowBalance    Float    @default(0.00)
-  lockedBalance    Float    @default(0.00)
-  createdAt        DateTime @default(now())
-  updatedAt        DateTime @updatedAt
+  id                    String   @id @default(auto()) @map("_id") @db.ObjectId
+  userId                String   @unique @db.ObjectId
+  user                  User     @relation(fields: [userId], references: [id])
+  availableBalance      Float    @default(0.00)
+  escrowBalance         Float    @default(0.00)
+  lockedBalance         Float    @default(0.00)
+  cryptoAvailableBalance Float    @default(0.00)
+  cryptoEscrowBalance    Float    @default(0.00)
+  createdAt             DateTime @default(now())
+  updatedAt             DateTime @updatedAt
 
   ledgerEntries LedgerEntry[]
 }
@@ -70,17 +73,20 @@ model Transaction {
 }
 
 model Wager {
-  id          String   @id @default(auto()) @map("_id") @db.ObjectId
-  creatorId   String   @db.ObjectId
-  creator     User     @relation("WagerCreator", fields: [creatorId], references: [id])
-  description String
-  totalPot    Float    @default(0.00)
-  status      String   // 'PENDING_FUNDING', 'ACTIVE', 'SETTLED', 'DISPUTED', 'CANCELLED', 'EXPIRED'
-  winnerId    String?  @db.ObjectId // Set when settled
-  isSymmetric Boolean  @default(true)
-  expiresAt   DateTime
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  id              String   @id @default(auto()) @map("_id") @db.ObjectId
+  creatorId       String   @db.ObjectId
+  creator         User     @relation("WagerCreator", fields: [creatorId], references: [id])
+  description     String
+  totalPot        Float    @default(0.00)
+  status          String   // 'PENDING_FUNDING', 'ACTIVE', 'SETTLED', 'DISPUTED', 'CANCELLED', 'EXPIRED'
+  winnerId        String?  @db.ObjectId // Set when settled
+  isSymmetric     Boolean  @default(true)
+  isWeb3          Boolean  @default(false)
+  contractWagerId String?
+  tokenAddress    String?
+  expiresAt       DateTime
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
 
   participants WagerParticipant[]
   dispute      Dispute?

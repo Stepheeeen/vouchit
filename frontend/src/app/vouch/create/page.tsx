@@ -14,6 +14,7 @@ export default function CreateVouchPage() {
   const [stake, setStake] = useState("");
   const [isSymmetric, setIsSymmetric] = useState(true);
   const [expiryDays, setExpiryDays] = useState("1");
+  const [isWeb3, setIsWeb3] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -29,7 +30,14 @@ export default function CreateVouchPage() {
 
     try {
       const { wagersApi } = await import("@/lib/api");
-      const wager = await wagersApi.create(description, Number(stake), isSymmetric, Number(expiryDays));
+      const wager = await wagersApi.create(
+        description,
+        Number(stake),
+        isSymmetric,
+        Number(expiryDays),
+        isWeb3,
+        isWeb3 ? `0xcontract_${Date.now()}` : undefined
+      );
       router.push(`/vouch/${wager.id}/invite`);
     } catch (err: any) {
       setError(err.message || "Failed to create wager. Please try again.");
@@ -62,6 +70,27 @@ export default function CreateVouchPage() {
               {error}
             </div>
           )}
+
+          {/* Funding Source Selector */}
+          <section className="flex flex-col gap-3">
+            <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Funding Source & Network</label>
+            <div className="grid grid-cols-2 gap-0 border border-[var(--border)]">
+              <div
+                onClick={() => setIsWeb3(false)}
+                className={`p-4 cursor-pointer transition-colors border-r border-[var(--border)] ${!isWeb3 ? "bg-[var(--foreground)] text-[var(--background)]" : "bg-transparent hover:bg-[var(--muted)]/50"}`}
+              >
+                <div className="font-semibold uppercase tracking-widest text-xs">Fiat NGN (Paystack)</div>
+                <div className={`text-[10px] mt-2 font-medium leading-tight ${!isWeb3 ? "text-[var(--background)]/80" : "text-[var(--muted-foreground)]"}`}>Web2 off-chain ledger. Zero gas fees.</div>
+              </div>
+              <div
+                onClick={() => setIsWeb3(true)}
+                className={`p-4 cursor-pointer transition-colors ${isWeb3 ? "bg-[var(--foreground)] text-[var(--background)]" : "bg-transparent hover:bg-[var(--muted)]/50"}`}
+              >
+                <div className="font-semibold uppercase tracking-widest text-xs">Web3 On-Chain</div>
+                <div className={`text-[10px] mt-2 font-medium leading-tight ${isWeb3 ? "text-[var(--background)]/80" : "text-[var(--muted-foreground)]"}`}>Smart Contract escrow on EVM.</div>
+              </div>
+            </div>
+          </section>
 
           {/* Description Section */}
           <section className="flex flex-col gap-3">
