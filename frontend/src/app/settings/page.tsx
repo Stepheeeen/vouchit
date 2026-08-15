@@ -8,7 +8,6 @@ import {
   ChevronRight, Check, Eye, EyeOff, Smartphone, Lock,
   Trash2, AlertTriangle, Camera, Loader2
 } from "lucide-react";
-import Cookies from "js-cookie";
 import { NIGERIAN_BANKS } from "../wallet/page";
 
 function Toggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) {
@@ -241,9 +240,9 @@ export default function SettingsPage() {
     }
   };
 
-  const handleLogout = () => {
-    Cookies.remove("vouchit_token");
-    localStorage.removeItem("vouchit_token");
+  const handleLogout = async () => {
+    const { clearAuthToken } = await import("@/lib/api");
+    clearAuthToken();
     router.push("/auth/login");
   };
 

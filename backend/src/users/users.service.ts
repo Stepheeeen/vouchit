@@ -14,7 +14,8 @@ export class UsersService {
       },
     });
     if (!user) throw new NotFoundException('User not found');
-    return user;
+    const { password, otp, otpExpiresAt, ...safeUser } = user;
+    return safeUser;
   }
 
   async updateMe(id: string, data: { displayName?: string; bio?: string; phone?: string }) {

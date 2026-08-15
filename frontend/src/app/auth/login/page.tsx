@@ -5,7 +5,6 @@ import { useRouter } from "next/navigation";
 import { ArrowRight, Smartphone, Check, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import Cookies from "js-cookie";
 
 export default function LoginPage() {
   const router = useRouter();
@@ -24,13 +23,12 @@ export default function LoginPage() {
     setIsLoading(true);
     setError("");
     try {
-      const { authApi } = await import("@/lib/api");
-      
+      const { authApi, setAuthToken } = await import("@/lib/api");
+
       if (isLogin) {
         const res = await authApi.login(email, password);
         if (res.accessToken) {
-          Cookies.set("vouchit_token", res.accessToken, { expires: 7 });
-          localStorage.setItem("vouchit_token", res.accessToken); // keep for backward compatibility during transition
+          setAuthToken(res.accessToken);
           router.push("/dashboard");
         }
       } else {

@@ -137,22 +137,37 @@ export default function AppNav() {
 
         {/* Right actions */}
         <div className="flex items-center gap-2 md:px-3 lg:px-6 py-3 border-l border-[var(--border)] shrink-0">
-          {/* Web3 Wallet Connect */}
-          <button
-            onClick={linkWalletToBackend}
-            disabled={isConnecting}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border border-[var(--border)] bg-white hover:bg-[var(--muted)] transition-colors shrink-0 cursor-pointer"
-            title={isConnected ? `Connected Wallet: ${account}` : "Connect Web3 Wallet"}
-          >
-            <Link2 className={`h-3.5 w-3.5 ${isConnected ? "text-emerald-500" : "text-slate-400"}`} />
-            <span className="hidden lg:inline text-[var(--foreground)]">
-              {isConnected
-                ? `${account?.slice(0, 6)}...${account?.slice(-4)}`
-                : isConnecting
-                ? "Connecting..."
-                : "Connect Wallet"}
-            </span>
-          </button>
+          {/* Web3 Wallet Connect — `user.web3Address` is the wallet linked to this
+              account server-side and survives reload; `isConnected` only reflects
+              whether the injected provider currently grants live permission in
+              *this* browser session. Show the linked address first so the badge
+              doesn't wrongly flip to "Connect Wallet" on every reload. */}
+          {(() => {
+            const linkedAddress: string | null = user?.web3Address || null;
+            const displayAddress = account || linkedAddress;
+            const isLinked = !!linkedAddress;
+            return (
+              <button
+                onClick={linkWalletToBackend}
+                disabled={isConnecting}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border border-[var(--border)] bg-white hover:bg-[var(--muted)] transition-colors shrink-0 cursor-pointer"
+                title={
+                  isLinked
+                    ? `Linked wallet: ${linkedAddress}${isConnected ? " (connected)" : " — reconnect for signing"}`
+                    : "Connect Web3 Wallet"
+                }
+              >
+                <Link2 className={`h-3.5 w-3.5 ${isLinked ? "text-emerald-500" : isConnected ? "text-amber-500" : "text-slate-400"}`} />
+                <span className="hidden lg:inline text-[var(--foreground)]">
+                  {displayAddress
+                    ? `${displayAddress.slice(0, 6)}...${displayAddress.slice(-4)}`
+                    : isConnecting
+                    ? "Connecting..."
+                    : "Connect Wallet"}
+                </span>
+              </button>
+            );
+          })()}
 
           {/* Create CTA */}
           <Link href="/vouch/create">

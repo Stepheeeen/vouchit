@@ -4,7 +4,6 @@ import { useState, useRef, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import Cookies from "js-cookie";
 
 function VerifyContent() {
   const router = useRouter();
@@ -80,11 +79,10 @@ function VerifyContent() {
 
     setIsLoading(true);
     try {
-      const { authApi } = await import("@/lib/api");
+      const { authApi, setAuthToken } = await import("@/lib/api");
       const res = await authApi.verifyEmail(email, code);
       if (res.accessToken) {
-        Cookies.set("vouchit_token", res.accessToken, { expires: 7 });
-        localStorage.setItem("vouchit_token", res.accessToken);
+        setAuthToken(res.accessToken);
         router.push("/dashboard");
       } else {
         setErrorMsg("Failed to authenticate.");

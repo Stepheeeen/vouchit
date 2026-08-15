@@ -11,7 +11,10 @@ export async function fetchApi(endpoint: string, options: RequestInit = {}) {
   const token = Cookies.get('vouchit_token');
 
   const headers: Record<string, string> = {
-    'Content-Type': 'application/json',
+    // Only set Content-Type when there's a body — sending it on every GET
+    // (including the notification poll every 10s) forces an unnecessary
+    // CORS preflight (OPTIONS) round-trip before each real request.
+    ...(options.body ? { 'Content-Type': 'application/json' } : {}),
     ...(options.headers as Record<string, string>),
   };
 
@@ -30,6 +33,23 @@ export async function fetchApi(endpoint: string, options: RequestInit = {}) {
   }
 
   return response.json();
+}
+
+// Shared token storage so every call site (login, verify, logout) applies the
+// same cookie attributes instead of re-declaring `expires`/`sameSite`/`secure`.
+export function setAuthToken(token: string) {
+  Cookies.set('vouchit_token', token, {
+    expires: 7,
+    path: '/',
+    sameSite: 'Lax',
+    secure: !isLocal,
+  });
+  localStorage.setItem('vouchit_token', token); // kept for backward compatibility during transition
+}
+
+export function clearAuthToken() {
+  Cookies.remove('vouchit_token', { path: '/' });
+  localStorage.removeItem('vouchit_token');
 }
 
 export const authApi = {
