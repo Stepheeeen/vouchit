@@ -18,7 +18,43 @@ export class UsersService {
     return safeUser;
   }
 
-  async updateMe(id: string, data: { displayName?: string; bio?: string; phone?: string }) {
+  /**
+   * Public-safe view of a user. Deliberately excludes email, wallet, tier and
+   * anything else that isn't the person's public identity — this backs
+   * GET /users/:id, which anybody can call.
+   */
+  async findPublicById(id: string) {
+    const user = await this.prisma.user.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        displayName: true,
+        bio: true,
+        avatarUrl: true,
+        web3Address: true,
+        createdAt: true,
+      },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    // Public record: wins/losses only, never amounts.
+    const participations = await this.prisma.wagerParticipant.findMany({
+      where: { userId: id, wager: { status: 'SETTLED' } },
+      include: { wager: { select: { winnerId: true } } },
+    });
+    const wins = participations.filter((p) => p.wager.winnerId === id).length;
+    const losses = participations.length - wins;
+
+    return {
+      ...user,
+      name: user.displayName || 'Vouchit user',
+      wins,
+      losses,
+      winRate: participations.length > 0 ? Math.round((wins / participations.length) * 100) : 0,
+    };
+  }
+
+  async updateMe(id: string, data: { displayName?: string; bio?: string; phone?: string; avatarUrl?: string }) {
     if (data.phone) {
       const existing = await this.prisma.user.findFirst({
         where: { phone: data.phone, id: { not: id } },
@@ -34,6 +70,7 @@ export class UsersService {
         ...(data.displayName !== undefined && { displayName: data.displayName }),
         ...(data.bio !== undefined && { bio: data.bio }),
         ...(data.phone !== undefined && { phone: data.phone }),
+        ...(data.avatarUrl !== undefined && { avatarUrl: data.avatarUrl }),
       },
       include: { wallet: true },
     });
@@ -116,30 +153,47 @@ export class UsersService {
     return leaders;
   }
 
-  async verifyKYC(userId: string, type: 'BVN' | 'NIN', number: string) {
-    if (!type || !['BVN', 'NIN'].includes(type)) {
-      throw new BadRequestException('Verification type must be BVN or NIN');
-    }
-    if (!number || number.length !== 11 || !/^\d+$/.test(number)) {
-      throw new BadRequestException('BVN or NIN must be exactly 11 digits');
-    }
-
-    if (number === '00000000000') {
-      throw new BadRequestException('Invalid identification number. Verification failed.');
-    }
-
-    const updatedUser = await this.prisma.user.update({
+  /**
+   * Everything we hold about a user, as one JSON document. Secrets are stripped:
+   * the password hash, OTP fields and OTP expiry never leave the server.
+   */
+  async exportMyData(userId: string) {
+    const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      data: { kycTier: 1 },
-      include: { wallet: true },
+      include: {
+        // Transactions hang off ledger entries, not the wallet directly.
+        wallet: { include: { ledgerEntries: { include: { transaction: true } } } },
+        notifications: true,
+      },
+    });
+    if (!user) throw new NotFoundException('User not found');
+
+    const participations = await this.prisma.wagerParticipant.findMany({
+      where: { userId },
+      include: {
+        wager: {
+          include: {
+            participants: { select: { userId: true, side: true, amount: true, status: true } },
+            dispute: { include: { evidence: true } },
+          },
+        },
+      },
     });
 
+    const { password, otp, otpExpiresAt, ...safeUser } = user;
+
     return {
-      success: true,
-      message: `${type} verified successfully`,
-      kycTier: updatedUser.kycTier,
-      user: updatedUser,
+      exportedAt: new Date().toISOString(),
+      format: 'vouchit.export.v1',
+      user: safeUser,
+      wagers: participations.map((p) => ({
+        role: p.side,
+        myStake: p.amount,
+        myStatus: p.status,
+        mySettleVote: p.settleVote,
+        joinedAt: p.createdAt,
+        wager: p.wager,
+      })),
     };
   }
 }
-

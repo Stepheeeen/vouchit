@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import {
@@ -93,19 +93,66 @@ export default function SettingsPage() {
   const [publicProfile, setPublicProfile] = useState(true);
   const [showOnLeaderboard, setShowOnLeaderboard] = useState(true);
 
-  // KYC Verification State
-  const [showKycModal, setShowKycModal] = useState(false);
-  const [kycType, setKycType] = useState<"BVN" | "NIN">("BVN");
-  const [kycNumber, setKycNumber] = useState("");
-  const [isVerifyingKyc, setIsVerifyingKyc] = useState(false);
-  const [kycError, setKycError] = useState("");
+  // Avatar upload
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
+  const [avatarError, setAvatarError] = useState("");
 
-  useEffect(() => {
-    if (!showKycModal) {
-      setKycNumber("");
-      setKycError("");
+  // Data export
+  const [isExporting, setIsExporting] = useState(false);
+
+  const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
+
+  const handleAvatarChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    // Reset immediately so picking the same file twice still fires onChange.
+    e.target.value = "";
+    if (!file) return;
+
+    if (file.size > MAX_AVATAR_BYTES) {
+      setAvatarError("That image is larger than 5MB.");
+      return;
     }
-  }, [showKycModal]);
+
+    setAvatarError("");
+    setIsUploadingAvatar(true);
+    try {
+      const { disputesApi, userApi } = await import("@/lib/api");
+      const { url } = await disputesApi.uploadFile(file);
+      await userApi.updateProfile({ avatarUrl: url });
+      setAvatarUrl(url);
+      const { toast } = await import("sonner");
+      toast.success("Profile photo updated.");
+    } catch (err: any) {
+      const message = err?.message || "Could not upload that image.";
+      setAvatarError(message);
+      const { toast } = await import("sonner");
+      toast.error(message);
+    } finally {
+      setIsUploadingAvatar(false);
+    }
+  };
+
+  const handleExportData = async () => {
+    setIsExporting(true);
+    try {
+      const { userApi } = await import("@/lib/api");
+      const data = await userApi.exportMyData();
+      const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = `vouchit-data-${new Date().toISOString().slice(0, 10)}.json`;
+      link.click();
+      URL.revokeObjectURL(url);
+    } catch (err: any) {
+      const { toast } = await import("sonner");
+      toast.error(err?.message || "Could not export your data.");
+    } finally {
+      setIsExporting(false);
+    }
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -118,6 +165,7 @@ export default function SettingsPage() {
         setEmail(profile.email || "");
         setPhone(profile.phone || "");
         setBio(profile.bio || "");
+        setAvatarUrl(profile.avatarUrl || null);
 
         // Load local toggles
         setNotifWager(localStorage.getItem("notifWager") !== "false");
@@ -270,20 +318,51 @@ export default function SettingsPage() {
                 {/* Avatar */}
                 <div className="flex items-center gap-5 mb-6 pb-6 border-b border-[var(--border)]">
                   <div className="relative">
-                    <div
-                      className="h-20 w-20 rounded-full flex items-center justify-center text-white font-bold text-2xl"
-                      style={{ background: "linear-gradient(135deg,#0d9488,#115e59)", boxShadow: "0 4px 16px rgba(13,148,136,0.3)" }}
+                    {avatarUrl ? (
+                      // eslint-disable-next-line @next/next/no-img-element
+                      <img src={avatarUrl} alt="Profile" className="h-20 w-20 rounded-full object-cover" />
+                    ) : (
+                      <div
+                        className="h-20 w-20 rounded-full flex items-center justify-center text-white font-bold text-2xl"
+                        style={{ background: "linear-gradient(135deg,#0d9488,#115e59)", boxShadow: "0 4px 16px rgba(13,148,136,0.3)" }}
+                      >
+                        {initials}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => avatarInputRef.current?.click()}
+                      disabled={isUploadingAvatar}
+                      className="absolute bottom-0 right-0 h-7 w-7 rounded-full bg-[var(--primary)] flex items-center justify-center shadow-md hover:opacity-90 transition-opacity disabled:opacity-60"
                     >
-                      {initials}
-                    </div>
-                    <button className="absolute bottom-0 right-0 h-7 w-7 rounded-full bg-[var(--primary)] flex items-center justify-center shadow-md hover:opacity-90 transition-opacity">
-                      <Camera className="h-3.5 w-3.5 text-white" />
+                      {isUploadingAvatar ? (
+                        <Loader2 className="h-3.5 w-3.5 text-white animate-spin" />
+                      ) : (
+                        <Camera className="h-3.5 w-3.5 text-white" />
+                      )}
                     </button>
                   </div>
                   <div>
                     <p className="font-semibold text-sm">Profile Photo</p>
                     <p className="text-xs text-[var(--muted-foreground)] mt-0.5">PNG, JPG or GIF — max 5MB</p>
-                    <button className="mt-2 text-xs font-semibold text-[var(--primary)] hover:underline">Upload new photo</button>
+                    <button
+                      type="button"
+                      onClick={() => avatarInputRef.current?.click()}
+                      disabled={isUploadingAvatar}
+                      className="mt-2 text-xs font-semibold text-[var(--primary)] hover:underline disabled:opacity-60"
+                    >
+                      {isUploadingAvatar ? "Uploading…" : "Upload new photo"}
+                    </button>
+                    {avatarError && (
+                      <p className="mt-1 text-xs font-semibold text-[var(--danger)]">{avatarError}</p>
+                    )}
+                    <input
+                      ref={avatarInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/gif,image/webp"
+                      className="hidden"
+                      onChange={handleAvatarChange}
+                    />
                   </div>
                 </div>
 
@@ -573,8 +652,17 @@ export default function SettingsPage() {
                 </SettingRow>
                 <div className="mt-4 pt-4 border-t border-[var(--border)]">
                   <p className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-3">Data & Export</p>
-                  <button className="w-full py-3 rounded-xl border border-[var(--border)] text-sm font-semibold text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors text-left px-4 flex items-center justify-between">
-                    Download My Data <ChevronRight className="h-4 w-4 text-[var(--muted-foreground)]" />
+                  <button
+                    onClick={handleExportData}
+                    disabled={isExporting}
+                    className="w-full py-3 rounded-xl border border-[var(--border)] text-sm font-semibold text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors text-left px-4 flex items-center justify-between disabled:opacity-60"
+                  >
+                    {isExporting ? "Preparing your data…" : "Download My Data"}
+                    {isExporting ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-[var(--muted-foreground)]" />
+                    ) : (
+                      <ChevronRight className="h-4 w-4 text-[var(--muted-foreground)]" />
+                    )}
                   </button>
                 </div>
               </div>
@@ -593,24 +681,16 @@ export default function SettingsPage() {
                   <SettingRow label="Account Status" sub="Your current account standing">
                     <span className="text-xs font-semibold text-[var(--success)] bg-emerald-50 border border-emerald-200 px-2.5 py-1 rounded-full">Active</span>
                   </SettingRow>
-                  <SettingRow label="KYC Verification" sub="Identity verification status">
-                    <div className="flex items-center gap-2">
-                      <span className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
-                        user.kycTier > 0 
-                          ? "text-emerald-700 bg-emerald-50 border-emerald-200" 
+                  <SettingRow label="Wallet Verification" sub="Signature-linked wallet on Base">
+                    <span
+                      className={`text-xs font-semibold px-2.5 py-1 rounded-full border ${
+                        user.web3Address
+                          ? "text-emerald-700 bg-emerald-50 border-emerald-200"
                           : "text-amber-700 bg-amber-50 border-amber-200"
-                      }`}>
-                        {user.kycTier > 0 ? "Verified" : "Not Verified"}
-                      </span>
-                      {user.kycTier === 0 && (
-                        <button 
-                          onClick={() => setShowKycModal(true)}
-                          className="text-xs font-semibold bg-[var(--primary)] text-white px-3 py-1.5 rounded-xl hover:opacity-90 transition-opacity cursor-pointer"
-                        >
-                          Verify Now
-                        </button>
-                      )}
-                    </div>
+                      }`}
+                    >
+                      {user.web3Address ? "Linked" : "Not Linked"}
+                    </span>
                   </SettingRow>
                 </div>
 
@@ -662,91 +742,6 @@ export default function SettingsPage() {
         </div>
       </main>
 
-      {/* KYC Verification Modal */}
-      {showKycModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold mb-2">Verify Identity</h2>
-            <p className="text-xs text-[var(--muted-foreground)] mb-4">
-              Enter your Bank Verification Number (BVN) or National Identification Number (NIN) to upgrade your account tier.
-            </p>
-            {kycError && (
-              <div className="mb-4 p-3 border border-[var(--danger)]/30 bg-red-50 text-red-700 text-xs font-semibold rounded-xl">
-                {kycError}
-              </div>
-            )}
-            <div className="flex flex-col gap-4">
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">ID Type</label>
-                <div className="flex gap-2 mt-1">
-                  {(["BVN", "NIN"] as const).map((t) => (
-                    <button
-                      key={t}
-                      type="button"
-                      onClick={() => setKycType(t)}
-                      className={`flex-1 py-2 text-sm font-semibold rounded-xl border transition-colors ${
-                        kycType === t
-                          ? "bg-[var(--primary)]/10 text-[var(--primary)] border-[var(--primary)]"
-                          : "border-[var(--border)] text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
-                      }`}
-                    >
-                      {t}
-                    </button>
-                  ))}
-                </div>
-              </div>
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">
-                  {kycType} Number (11 Digits)
-                </label>
-                <input 
-                  type="text"
-                  maxLength={11}
-                  value={kycNumber}
-                  onChange={(e) => setKycNumber(e.target.value.replace(/\D/g, ""))}
-                  placeholder={`Enter your 11-digit ${kycType}`}
-                  className="w-full mt-1 p-3 border border-[var(--border)] rounded-xl font-semibold text-sm"
-                />
-              </div>
-              <div className="flex gap-3">
-                <button 
-                  onClick={() => setShowKycModal(false)}
-                  className="flex-1 py-3 font-semibold border border-[var(--border)] rounded-xl text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
-                  disabled={isVerifyingKyc}
-                >
-                  Cancel
-                </button>
-                <button 
-                  onClick={async () => {
-                    if (kycNumber.length !== 11) {
-                      setKycError("Identification number must be exactly 11 digits.");
-                      return;
-                    }
-                    setIsVerifyingKyc(true);
-                    setKycError("");
-                    try {
-                      const { userApi } = await import("@/lib/api");
-                      const res = await userApi.verifyKYC(kycType, kycNumber);
-                      setUser(res.user);
-                      setShowKycModal(false);
-                      const { toast } = await import("sonner");
-                      toast.success(`${kycType} verified successfully! Your account status is now verified.`);
-                    } catch (err: any) {
-                      setKycError(err.message || "KYC verification failed. Please check the number.");
-                    } finally {
-                      setIsVerifyingKyc(false);
-                    }
-                  }}
-                  disabled={isVerifyingKyc || kycNumber.length !== 11}
-                  className="flex-1 py-3 font-semibold bg-[var(--primary)] text-white rounded-xl disabled:opacity-50 flex justify-center items-center"
-                >
-                  {isVerifyingKyc ? <Loader2 className="h-5 w-5 animate-spin" /> : "Verify Identity"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
     </div>
   );
 }

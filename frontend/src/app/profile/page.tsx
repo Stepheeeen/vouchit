@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, Trophy, TrendingUp, Star, Flame, Crown, Zap, Shield, Edit2, Settings, Share2, ChevronRight, Loader2 } from "lucide-react";
+import { ArrowLeft, Trophy, TrendingUp, Star, Flame, Crown, Zap, Shield, Edit2, Settings, Share2, ChevronRight, Loader2, Check } from "lucide-react";
 import { formatStake, applyProtocolFee, formatEarnings, sumByToken } from "@/lib/web3/format";
 
 function getInitials(name: string) {
@@ -18,6 +18,24 @@ export default function ProfilePage() {
   const [user, setUser] = useState<any>(null);
   const [wagers, setWagers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
+  const [copied, setCopied] = useState(false);
+
+  /** Share the PUBLIC profile URL, not this private settings-style page. */
+  const handleShare = async () => {
+    if (!user) return;
+    const url = `${window.location.origin}/profile/${user.id}`;
+    if (navigator.share) {
+      try {
+        await navigator.share({ title: `${user.displayName || "My"} Vouchit profile`, url });
+        return;
+      } catch {
+        // Share sheet dismissed — fall back to copying.
+      }
+    }
+    await navigator.clipboard.writeText(url);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 1500);
+  };
 
   useEffect(() => {
     const load = async () => {
@@ -151,8 +169,12 @@ export default function ProfilePage() {
                 <p className="text-sm text-[var(--muted-foreground)] mt-0.5">{user.email}</p>
                 <p className="text-xs text-[var(--muted-foreground)] mt-0.5">Member since {memberSince}</p>
               </div>
-              <button className="flex items-center gap-2 text-xs font-semibold text-[var(--primary)] border border-[var(--border)] rounded-full px-4 py-1.5 hover:bg-[var(--muted)] transition-colors w-full justify-center">
-                <Share2 className="h-3.5 w-3.5" /> Share Profile
+              <button
+                onClick={handleShare}
+                className="flex items-center gap-2 text-xs font-semibold text-[var(--primary)] border border-[var(--border)] rounded-full px-4 py-1.5 hover:bg-[var(--muted)] transition-colors w-full justify-center"
+              >
+                {copied ? <Check className="h-3.5 w-3.5" /> : <Share2 className="h-3.5 w-3.5" />}
+                {copied ? "Link copied" : "Share Profile"}
               </button>
             </div>
 

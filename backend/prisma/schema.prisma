@@ -13,12 +13,18 @@ model User {
   password     String
   displayName  String?
   bio          String?
+  avatarUrl    String?
   emailVerified Boolean  @default(false)
   otp          String?
   otpExpiresAt DateTime?
   phone        String?
   web3Address  String?   @unique
-  kycTier      Int       @default(0) // 0: basic, 1: BVN/NIN verified
+  // Tiering is web3-native now; BVN/NIN identity checks are gone. The tier
+  // gates stake size and wager privileges — not withdrawals, which we cannot
+  // limit because we never hold user funds.
+  verificationTier   Int      @default(0)
+  // How the current tier was earned, e.g. 'WALLET_AGE', 'COINBASE_ATTESTATION'.
+  verificationMethod String?
   role         String    @default("USER") // "USER", "ADMIN"
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt

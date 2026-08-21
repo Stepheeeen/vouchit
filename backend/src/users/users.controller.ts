@@ -1,4 +1,4 @@
-import { Controller, Get, Patch, Post, Body, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Param, Patch, Post, Body, UseGuards, Request } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
@@ -16,7 +16,7 @@ export class UsersController {
   @Patch('me')
   async updateProfile(
     @Request() req: any,
-    @Body() body: { displayName?: string; bio?: string; phone?: string },
+    @Body() body: { displayName?: string; bio?: string; phone?: string; avatarUrl?: string },
   ) {
     return this.usersService.updateMe(req.user.userId, body);
   }
@@ -30,17 +30,20 @@ export class UsersController {
     return this.usersService.changePassword(req.user.userId, body.currentPassword, body.newPassword);
   }
 
+  @UseGuards(JwtAuthGuard)
+  @Get('me/export')
+  async exportMyData(@Request() req: any) {
+    return this.usersService.exportMyData(req.user.userId);
+  }
+
   @Get('leaderboard')
   async getLeaderboard() {
     return this.usersService.getLeaderboard();
   }
 
-  @UseGuards(JwtAuthGuard)
-  @Post('kyc')
-  async verifyKYC(
-    @Request() req: any,
-    @Body() body: { type: 'BVN' | 'NIN'; number: string },
-  ) {
-    return this.usersService.verifyKYC(req.user.userId, body.type, body.number);
+  // Declared last so it cannot shadow the literal routes above.
+  @Get(':id')
+  async getPublicProfile(@Param('id') id: string) {
+    return this.usersService.findPublicById(id);
   }
 }

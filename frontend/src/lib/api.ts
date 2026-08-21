@@ -88,12 +88,12 @@ export const wagersApi = {
 
 export const userApi = {
   getProfile: () => fetchApi('/users/me'),
-  updateProfile: (data: { displayName?: string; bio?: string; phone?: string }) =>
+  updateProfile: (data: { displayName?: string; bio?: string; phone?: string; avatarUrl?: string }) =>
     fetchApi('/users/me', { method: 'PATCH', body: JSON.stringify(data) }),
+  getPublicProfile: (id: string) => fetchApi(`/users/${id}`),
+  exportMyData: () => fetchApi('/users/me/export'),
   changePassword: (currentPassword: string, newPassword: string) =>
     fetchApi('/users/me/password', { method: 'PATCH', body: JSON.stringify({ currentPassword, newPassword }) }),
-  verifyKYC: (type: 'BVN' | 'NIN', number: string) =>
-    fetchApi('/users/kyc', { method: 'POST', body: JSON.stringify({ type, number }) }),
 };
 
 export const web3Api = {
