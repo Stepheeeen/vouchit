@@ -82,8 +82,11 @@ model Wager {
   winnerId        String?  @db.ObjectId // Set when settled
   isSymmetric     Boolean  @default(true)
   isWeb3          Boolean  @default(false)
-  contractWagerId String?
+  contractWagerId String?  @unique
   tokenAddress    String?
+  // On-chain stake in the token's base units (wei / USDC micro-units), stored as
+  // a string because it can exceed Float's safe integer range. Null for web2 wagers.
+  onChainStake    String?
   expiresAt       DateTime
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt

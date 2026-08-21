@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
+import { Web3Service } from '../web3/web3.service';
 
 const FEE_RATE = 0.025; // 2.5%
 
@@ -9,6 +10,7 @@ export class WagersService {
   constructor(
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
+    private web3Service: Web3Service,
   ) {}
 
   async checkAndProcessExpiredWagers() {
@@ -78,7 +80,18 @@ export class WagersService {
   ) {
     if (amount <= 0) throw new BadRequestException('Amount must be positive');
 
-    if (!isWeb3) {
+    let onChainStake: bigint | undefined;
+    let onChainToken: string | undefined;
+
+    if (isWeb3) {
+      // The web3 branch deliberately skips the custodial balance check below —
+      // the stake is held by the escrow contract, not our ledger. That makes
+      // verifying the id against the chain mandatory, not optional: an
+      // unverified id would create a fully ACTIVE wager backed by nothing.
+      const onChain = await this.web3Service.verifyOnChainWager(userId, contractWagerId ?? '');
+      onChainStake = onChain.stakeAmount;
+      onChainToken = onChain.token;
+    } else {
       // For Web2 wagers, check wallet balance and lock escrow
       const wallet = await this.prisma.wallet.findUnique({ where: { userId } });
       if (!wallet) throw new BadRequestException('Wallet not found');
@@ -115,7 +128,8 @@ export class WagersService {
         isSymmetric: isSymmetric !== false,
         isWeb3: isWeb3 || false,
         contractWagerId: contractWagerId || null,
-        tokenAddress: tokenAddress || null,
+        tokenAddress: onChainToken ?? tokenAddress ?? null,
+        onChainStake: onChainStake !== undefined ? onChainStake.toString() : null,
         expiresAt,
         participants: {
           create: {
