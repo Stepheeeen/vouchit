@@ -144,6 +144,46 @@ export class Web3Service {
   }
 
   /**
+   * Confirm that `userId`'s wallet has escrowed the matching stake and that the
+   * escrow entry is now ACTIVE. Called when a challenger registers their join,
+   * so the DB only ever records a join the chain already accepted.
+   */
+  async verifyOnChainJoin(userId: string, contractWagerId: string) {
+    const escrow = this.getEscrowContract();
+    if (!escrow) {
+      throw new BadRequestException(
+        'On-chain wagers are unavailable: the escrow contract is not configured on this server.',
+      );
+    }
+
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user?.web3Address) {
+      throw new BadRequestException('Link a web3 wallet before joining an on-chain wager');
+    }
+
+    let onChain: any;
+    try {
+      onChain = await escrow.wagers(contractWagerId);
+    } catch (error: any) {
+      console.error('[Web3Service] Failed to read wager from chain:', error);
+      throw new BadRequestException('Could not reach the escrow contract to verify this join');
+    }
+
+    if (Number(onChain.status) !== OnChainWagerStatus.ACTIVE) {
+      throw new BadRequestException('This wager has not been funded on-chain yet');
+    }
+    if (String(onChain.challenger).toLowerCase() !== user.web3Address.toLowerCase()) {
+      throw new BadRequestException('A different wallet joined this wager on-chain');
+    }
+
+    return {
+      challenger: String(onChain.challenger),
+      stakeAmount: onChain.stakeAmount as bigint,
+      totalPot: onChain.totalPot as bigint,
+    };
+  }
+
+  /**
    * Trigger on-chain dispute resolution via Admin Relayer
    * If WEB3_RPC_URL or ADMIN_PRIVATE_KEY is missing, logs mock relayer event
    */
@@ -158,6 +198,14 @@ export class Web3Service {
     const adminPrivateKey = process.env.ADMIN_RELAYER_PRIVATE_KEY;
 
     if (!contractAddress || !rpcUrl || !adminPrivateKey) {
+      // Mock mode reports success without moving any money. That is fine for local
+      // development, but in production it would mark a dispute SETTLED and notify
+      // the winner of a payout that never happened — so refuse there.
+      if (process.env.NODE_ENV === 'production') {
+        throw new BadRequestException(
+          'Cannot resolve on-chain dispute: the relayer is not configured on this server.',
+        );
+      }
       console.log(`[Web3Service Mock Relayer] On-chain dispute resolved for wager ${wagerId} (Contract ID: ${contractWagerId}): Winner=${winnerAddress}, Type=${resolutionType}`);
       return {
         success: true,

@@ -62,8 +62,20 @@ export const authApi = {
 };
 
 export const wagersApi = {
-  create: (description: string, amount: number, isSymmetric?: boolean, expiryDays?: number, isWeb3?: boolean, contractWagerId?: string, tokenAddress?: string) =>
-    fetchApi('/wagers', { method: 'POST', body: JSON.stringify({ description, amount, isSymmetric, expiryDays, isWeb3, contractWagerId, tokenAddress }) }),
+  // `stake` is a human-readable token amount (e.g. "25" USDC); `contractWagerId`
+  // is the id of an already-mined escrow entry, which the API verifies on-chain.
+  create: (
+    description: string,
+    stake: string,
+    tokenAddress: string,
+    isSymmetric: boolean,
+    expiryDays: number,
+    contractWagerId: string,
+  ) =>
+    fetchApi('/wagers', {
+      method: 'POST',
+      body: JSON.stringify({ description, stake, tokenAddress, isSymmetric, expiryDays, contractWagerId }),
+    }),
   getAll: () => fetchApi('/wagers'),
   getById: (id: string) => fetchApi(`/wagers/${id}`),
   getMy: () => fetchApi('/wagers/my'),

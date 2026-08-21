@@ -77,16 +77,19 @@ model Wager {
   creatorId       String   @db.ObjectId
   creator         User     @relation("WagerCreator", fields: [creatorId], references: [id])
   description     String
-  totalPot        Float    @default(0.00)
+  // Crypto-denominated: base units of `tokenAddress` (wei / USDC micro-units),
+  // stored as a string because 18-decimal amounts exceed Float's safe range.
+  totalPot        String   @default("0")
   status          String   // 'PENDING_FUNDING', 'ACTIVE', 'SETTLED', 'DISPUTED', 'CANCELLED', 'EXPIRED'
   winnerId        String?  @db.ObjectId // Set when settled
   isSymmetric     Boolean  @default(true)
-  isWeb3          Boolean  @default(false)
   contractWagerId String?  @unique
-  tokenAddress    String?
-  // On-chain stake in the token's base units (wei / USDC micro-units), stored as
-  // a string because it can exceed Float's safe integer range. Null for web2 wagers.
-  onChainStake    String?
+  tokenAddress    String
+  tokenSymbol     String
+  tokenDecimals   Int
+  // Required stake PER participant, in base units — mirrors the escrow's
+  // `stakeAmount`. totalPot is the running sum of stakes actually escrowed.
+  onChainStake    String
   expiresAt       DateTime
   createdAt       DateTime @default(now())
   updatedAt       DateTime @updatedAt
@@ -105,7 +108,8 @@ model WagerParticipant {
   userId      String   @db.ObjectId
   user        User     @relation(fields: [userId], references: [id])
   side        String   // 'CREATOR', 'CHALLENGER'
-  amount      Float
+  // Base units of the parent wager's token, as a string. See Wager.totalPot.
+  amount      String
   status      String   // 'PENDING', 'FUNDED', 'REFUNDED'
   settleVote  String?  @db.ObjectId // userId they voted as winner
   createdAt   DateTime @default(now())

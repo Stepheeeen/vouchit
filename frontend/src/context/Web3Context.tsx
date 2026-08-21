@@ -1,158 +1,133 @@
 "use client";
 
-import React, { createContext, useContext, useState, useEffect } from "react";
+import React, { createContext, useCallback, useContext, useMemo, useState } from "react";
+import { WagmiProvider, useAccount, useChainId, useConnect, useDisconnect, useSignMessage } from "wagmi";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { userApi, web3Api } from "@/lib/api";
+import { wagmiConfig, ACTIVE_CHAIN } from "@/lib/web3/config";
 
 interface Web3ContextType {
   account: string | null;
   chainId: number | null;
   isConnected: boolean;
   isConnecting: boolean;
-  connectWallet: () => Promise<string | null>;
+  /** True when the connected wallet is on the network the escrow is deployed to. */
+  isCorrectChain: boolean;
+  /** Passkey / smart-wallet sign-in. Falls back to a browser wallet if present. */
+  connectWallet: (options?: { useBrowserWallet?: boolean }) => Promise<string | null>;
   disconnectWallet: () => void;
   signMessage: (message: string) => Promise<string | null>;
   linkWalletToBackend: () => Promise<boolean>;
 }
 
-const Web3Context = createContext<Web3ContextType>({
+const noop = {
   account: null,
   chainId: null,
   isConnected: false,
   isConnecting: false,
+  isCorrectChain: false,
   connectWallet: async () => null,
   disconnectWallet: () => {},
   signMessage: async () => null,
   linkWalletToBackend: async () => false,
-});
+};
 
-export const Web3Provider = ({ children }: { children: React.ReactNode }) => {
-  const [account, setAccount] = useState<string | null>(null);
-  const [chainId, setChainId] = useState<number | null>(null);
-  const [isConnecting, setIsConnecting] = useState(false);
+const Web3Context = createContext<Web3ContextType>(noop);
 
-  useEffect(() => {
-    // Check if wallet was previously connected
-    if (typeof window !== "undefined" && (window as any).ethereum) {
-      const ethereum = (window as any).ethereum;
-      ethereum.request({ method: "eth_accounts" }).then((accounts: string[]) => {
-        if (accounts.length > 0) {
-          setAccount(accounts[0]);
-        }
-      }).catch(console.error);
+const queryClient = new QueryClient();
 
-      ethereum.request({ method: "eth_chainId" }).then((hexChainId: string) => {
-        setChainId(parseInt(hexChainId, 16));
-      }).catch(console.error);
+function Web3StateProvider({ children }: { children: React.ReactNode }) {
+  const { address, isConnected } = useAccount();
+  const chainId = useChainId();
+  const { connectAsync, connectors, isPending } = useConnect();
+  const { disconnect } = useDisconnect();
+  const { signMessageAsync } = useSignMessage();
+  const [isLinking, setIsLinking] = useState(false);
 
-      const handleAccountsChanged = (accounts: string[]) => {
-        setAccount(accounts.length > 0 ? accounts[0] : null);
-      };
+  const connectWallet = useCallback(
+    async (options?: { useBrowserWallet?: boolean }) => {
+      // connectors[0] is the Coinbase Smart Wallet (passkey), [1] is injected.
+      const connector = options?.useBrowserWallet
+        ? connectors.find((c) => c.id === "injected") ?? connectors[0]
+        : connectors[0];
+      if (!connector) return null;
 
-      const handleChainChanged = (hexChainId: string) => {
-        setChainId(parseInt(hexChainId, 16));
-      };
+      try {
+        const result = await connectAsync({ connector, chainId: ACTIVE_CHAIN.id });
+        return result.accounts[0] ?? null;
+      } catch (err) {
+        console.error("Wallet connection failed:", err);
+        return null;
+      }
+    },
+    [connectAsync, connectors],
+  );
 
-      ethereum.on("accountsChanged", handleAccountsChanged);
-      ethereum.on("chainChanged", handleChainChanged);
+  const signMessage = useCallback(
+    async (message: string) => {
+      try {
+        return await signMessageAsync({ message });
+      } catch (err) {
+        console.error("Message signing failed:", err);
+        return null;
+      }
+    },
+    [signMessageAsync],
+  );
 
-      return () => {
-        if (ethereum.removeListener) {
-          ethereum.removeListener("accountsChanged", handleAccountsChanged);
-          ethereum.removeListener("chainChanged", handleChainChanged);
-        }
-      };
-    }
-  }, []);
-
-  const connectWallet = async (): Promise<string | null> => {
-    if (typeof window === "undefined" || !(window as any).ethereum) {
-      alert("No EVM wallet found! Please install MetaMask or another Web3 browser extension.");
-      return null;
-    }
-
+  /**
+   * Prove ownership of the connected address to the API so it persists on the
+   * user record. The message format must stay in lockstep with
+   * Web3Service.linkWallet on the backend.
+   */
+  const linkWalletToBackend = useCallback(async () => {
+    if (isLinking) return false;
+    setIsLinking(true);
     try {
-      setIsConnecting(true);
-      const ethereum = (window as any).ethereum;
-      const accounts: string[] = await ethereum.request({ method: "eth_requestAccounts" });
-      const hexChainId: string = await ethereum.request({ method: "eth_chainId" });
-      
-      const selectedAccount = accounts[0];
-      setAccount(selectedAccount);
-      setChainId(parseInt(hexChainId, 16));
-      return selectedAccount;
-    } catch (err: any) {
-      console.error("Wallet connection failed:", err);
-      return null;
-    } finally {
-      setIsConnecting(false);
-    }
-  };
+      const currentAccount = address ?? (await connectWallet());
+      if (!currentAccount) return false;
 
-  const disconnectWallet = () => {
-    setAccount(null);
-    setChainId(null);
-  };
-
-  const signMessage = async (message: string): Promise<string | null> => {
-    if (!account || typeof window === "undefined" || !(window as any).ethereum) {
-      return null;
-    }
-
-    try {
-      const ethereum = (window as any).ethereum;
-      const signature: string = await ethereum.request({
-        method: "personal_sign",
-        params: [message, account],
-      });
-      return signature;
-    } catch (err: any) {
-      console.error("Message signing failed:", err);
-      return null;
-    }
-  };
-
-  const linkWalletToBackend = async (): Promise<boolean> => {
-    let currentAccount = account;
-    if (!currentAccount) {
-      currentAccount = await connectWallet();
-    }
-    if (!currentAccount) return false;
-
-    // Fetch user profile from API to get userId
-    try {
       const profile = await userApi.getProfile();
-      const userId = profile.id;
-      const message = `Sign to verify ownership of wallet ${currentAccount} for Vouchit account ${userId}`;
-      
+      const message = `Sign to verify ownership of wallet ${currentAccount} for Vouchit account ${profile.id}`;
       const signature = await signMessage(message);
       if (!signature) return false;
 
       await web3Api.linkWallet(currentAccount, signature);
-
       return true;
     } catch (err: any) {
       console.error("Link wallet to backend failed:", err);
-      alert(err.message || "Failed to link wallet");
+      const { toast } = await import("sonner");
+      toast.error(err?.message || "Failed to link wallet");
       return false;
+    } finally {
+      setIsLinking(false);
     }
-  };
+  }, [address, connectWallet, isLinking, signMessage]);
 
-  return (
-    <Web3Context.Provider
-      value={{
-        account,
-        chainId,
-        isConnected: !!account,
-        isConnecting,
-        connectWallet,
-        disconnectWallet,
-        signMessage,
-        linkWalletToBackend,
-      }}
-    >
-      {children}
-    </Web3Context.Provider>
+  const value = useMemo(
+    () => ({
+      account: address ?? null,
+      chainId: chainId ?? null,
+      isConnected,
+      isConnecting: isPending || isLinking,
+      isCorrectChain: chainId === ACTIVE_CHAIN.id,
+      connectWallet,
+      disconnectWallet: () => disconnect(),
+      signMessage,
+      linkWalletToBackend,
+    }),
+    [address, chainId, isConnected, isPending, isLinking, connectWallet, disconnect, signMessage, linkWalletToBackend],
   );
-};
+
+  return <Web3Context.Provider value={value}>{children}</Web3Context.Provider>;
+}
+
+export const Web3Provider = ({ children }: { children: React.ReactNode }) => (
+  <WagmiProvider config={wagmiConfig}>
+    <QueryClientProvider client={queryClient}>
+      <Web3StateProvider>{children}</Web3StateProvider>
+    </QueryClientProvider>
+  </WagmiProvider>
+);
 
 export const useWeb3 = () => useContext(Web3Context);

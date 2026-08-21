@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Web3Service } from '../web3/web3.service';
+import { findToken, parseTokenAmount } from '../web3/tokens';
 
 const FEE_RATE = 0.025; // 2.5%
 
@@ -13,57 +14,35 @@ export class WagersService {
     private web3Service: Web3Service,
   ) {}
 
+  /**
+   * Mirror expiry into our records. The refund itself is on-chain: the creator
+   * (or anyone) calls `cancelExpiredWager` on the escrow, which returns the
+   * stake. We never move funds here — we don't hold them.
+   */
   async checkAndProcessExpiredWagers() {
     const now = new Date();
     const expiredWagers = await this.prisma.wager.findMany({
-      where: {
-        status: 'PENDING_FUNDING',
-        expiresAt: { lt: now },
-      },
-      include: {
-        participants: true,
-      },
+      where: { status: 'PENDING_FUNDING', expiresAt: { lt: now } },
+      include: { participants: true },
     });
 
     for (const wager of expiredWagers) {
-      const creatorParticipant = wager.participants.find(p => p.side === 'CREATOR');
-      if (creatorParticipant && creatorParticipant.status === 'FUNDED') {
-        const creatorId = wager.creatorId;
-        const refundAmount = creatorParticipant.amount;
-
-        try {
-          await this.prisma.$transaction(async (tx) => {
-            const wallet = await tx.wallet.findUnique({ where: { userId: creatorId } });
-            if (wallet) {
-              await tx.wallet.update({
-                where: { userId: creatorId },
-                data: {
-                  availableBalance: Number(wallet.availableBalance) + refundAmount,
-                  escrowBalance: Math.max(0, Number(wallet.escrowBalance) - refundAmount),
-                  ledgerEntries: {
-                    create: {
-                      amount: refundAmount,
-                      type: 'ESCROW_RELEASE',
-                      description: `Refund for expired wager: ${wager.description.slice(0, 40)}`,
-                    },
-                  },
-                },
-              });
-            }
-
-            await tx.wagerParticipant.update({
-              where: { id: creatorParticipant.id },
-              data: { status: 'REFUNDED' },
-            });
-
-            await tx.wager.update({
-              where: { id: wager.id },
-              data: { status: 'EXPIRED' },
-            });
+      try {
+        await this.prisma.$transaction(async (tx) => {
+          await tx.wagerParticipant.updateMany({
+            where: { wagerId: wager.id, status: 'FUNDED' },
+            data: { status: 'REFUNDABLE' },
           });
-        } catch (error) {
-          console.error(`Failed to process refund for expired wager ${wager.id}:`, error);
-        }
+          await tx.wager.update({ where: { id: wager.id }, data: { status: 'EXPIRED' } });
+        });
+
+        await this.notificationsService.createNotification(
+          wager.creatorId,
+          'WAGER_EXPIRED',
+          `Nobody joined "${wager.description.slice(0, 40)}". Your stake is unlocked — claim the refund from the wager page.`,
+        );
+      } catch (error) {
+        console.error(`Failed to mark wager ${wager.id} expired:`, error);
       }
     }
   }
@@ -71,49 +50,34 @@ export class WagersService {
   async createWager(
     userId: string,
     description: string,
-    amount: number,
+    stake: string,
+    tokenAddress: string,
+    contractWagerId: string,
     isSymmetric?: boolean,
     expiryDays?: number,
-    isWeb3?: boolean,
-    contractWagerId?: string,
-    tokenAddress?: string,
   ) {
-    if (amount <= 0) throw new BadRequestException('Amount must be positive');
+    const token = findToken(tokenAddress);
+    if (!token) {
+      throw new BadRequestException('Unsupported stake currency');
+    }
 
-    let onChainStake: bigint | undefined;
-    let onChainToken: string | undefined;
+    let stakeAmount: bigint;
+    try {
+      stakeAmount = parseTokenAmount(stake, token.decimals);
+    } catch (err: any) {
+      throw new BadRequestException(err.message);
+    }
+    if (stakeAmount < token.minStake) {
+      throw new BadRequestException(`Stake is below the ${token.symbol} minimum`);
+    }
 
-    if (isWeb3) {
-      // The web3 branch deliberately skips the custodial balance check below —
-      // the stake is held by the escrow contract, not our ledger. That makes
-      // verifying the id against the chain mandatory, not optional: an
-      // unverified id would create a fully ACTIVE wager backed by nothing.
-      const onChain = await this.web3Service.verifyOnChainWager(userId, contractWagerId ?? '');
-      onChainStake = onChain.stakeAmount;
-      onChainToken = onChain.token;
-    } else {
-      // For Web2 wagers, check wallet balance and lock escrow
-      const wallet = await this.prisma.wallet.findUnique({ where: { userId } });
-      if (!wallet) throw new BadRequestException('Wallet not found');
-      if (Number(wallet.availableBalance) < amount) {
-        throw new BadRequestException('Insufficient balance. Please fund your wallet first.');
-      }
-
-      // Deduct from available, add to escrow, create ledger entry
-      await this.prisma.wallet.update({
-        where: { userId },
-        data: {
-          availableBalance: Number(wallet.availableBalance) - amount,
-          escrowBalance: Number(wallet.escrowBalance) + amount,
-          ledgerEntries: {
-            create: {
-              amount: -amount,
-              type: 'ESCROW_LOCK',
-              description: `Stake locked for wager: ${description.slice(0, 40)}`,
-            },
-          },
-        },
-      });
+    // Stakes live in the escrow contract, never in our ledger, so the id must be
+    // proven against the chain before the wager exists here. verifyOnChainWager
+    // checks the escrow entry exists, was created by this user's linked wallet,
+    // is still open, and holds exactly the stake being claimed.
+    const onChain = await this.web3Service.verifyOnChainWager(userId, contractWagerId, stakeAmount);
+    if (onChain.token.toLowerCase() !== token.address) {
+      throw new BadRequestException('On-chain stake token does not match the submitted currency');
     }
 
     const days = expiryDays && [1, 3, 7, 30].includes(expiryDays) ? expiryDays : 1;
@@ -123,19 +87,21 @@ export class WagersService {
       data: {
         creatorId: userId,
         description,
-        totalPot: amount,
-        status: isWeb3 ? 'ACTIVE' : 'PENDING_FUNDING',
+        // Only the creator has staked so far; the challenger's match doubles it.
+        totalPot: stakeAmount.toString(),
+        status: 'PENDING_FUNDING',
         isSymmetric: isSymmetric !== false,
-        isWeb3: isWeb3 || false,
-        contractWagerId: contractWagerId || null,
-        tokenAddress: onChainToken ?? tokenAddress ?? null,
-        onChainStake: onChainStake !== undefined ? onChainStake.toString() : null,
+        contractWagerId,
+        tokenAddress: token.address,
+        tokenSymbol: token.symbol,
+        tokenDecimals: token.decimals,
+        onChainStake: stakeAmount.toString(),
         expiresAt,
         participants: {
           create: {
             userId,
             side: 'CREATOR',
-            amount,
+            amount: stakeAmount.toString(),
             status: 'FUNDED',
           },
         },
@@ -147,7 +113,7 @@ export class WagersService {
       await this.notificationsService.createNotification(
         userId,
         'WAGER_CREATED',
-        `You successfully created a wager: "${description.slice(0, 40)}${description.length > 40 ? '...' : ''}" with a stake of ₦${amount.toLocaleString()}.`
+        `You successfully created a wager: "${description.slice(0, 40)}${description.length > 40 ? '...' : ''}" with a stake of ${stake} ${token.symbol}.`
       );
     } catch (err) {
       console.error('Failed to create notification:', err);
@@ -196,7 +162,12 @@ export class WagersService {
     });
   }
 
-  async joinWager(wagerId: string, userId: string, amount: number) {
+  /**
+   * Record a join that has already happened on-chain. The challenger escrows
+   * their stake by calling `joinWager` on the escrow contract; this only mirrors
+   * the result after verifying it against the chain. No funds move here.
+   */
+  async joinWager(wagerId: string, userId: string) {
     const wager = await this.findOne(wagerId);
 
     if (wager.creatorId === userId) {
@@ -208,51 +179,27 @@ export class WagersService {
     if (wager.status !== 'PENDING_FUNDING') {
       throw new BadRequestException('This wager is no longer open to join');
     }
-
-    const creatorParticipant = wager.participants.find((p) => p.side === 'CREATOR');
-    if (wager.isSymmetric && creatorParticipant && creatorParticipant.amount !== amount) {
-      throw new BadRequestException(`This wager is symmetric. You must match the creator's stake of ₦${creatorParticipant.amount.toLocaleString()}`);
+    if (!wager.contractWagerId) {
+      throw new BadRequestException('This wager has no escrow entry');
     }
 
-    // Check wallet balance
-    const wallet = await this.prisma.wallet.findUnique({ where: { userId } });
-    if (!wallet) throw new BadRequestException('Wallet not found');
-    if (Number(wallet.availableBalance) < amount) {
-      throw new BadRequestException('Insufficient balance. Please fund your wallet first.');
-    }
+    const onChain = await this.web3Service.verifyOnChainJoin(userId, wager.contractWagerId);
 
-    // Deduct from challenger's wallet into escrow
-    await this.prisma.wallet.update({
-      where: { userId },
-      data: {
-        availableBalance: Number(wallet.availableBalance) - amount,
-        escrowBalance: Number(wallet.escrowBalance) + amount,
-        ledgerEntries: {
-          create: {
-            amount: -amount,
-            type: 'ESCROW_LOCK',
-            description: `Stake locked for wager: ${wager.description.slice(0, 40)}`,
-          },
-        },
-      },
-    });
-
-    // Add participant
     await this.prisma.wagerParticipant.create({
       data: {
         wagerId,
         userId,
         side: 'CHALLENGER',
-        amount,
+        amount: onChain.stakeAmount.toString(),
         status: 'FUNDED',
       },
     });
 
-    // Update wager
     const updated = await this.prisma.wager.update({
       where: { id: wagerId },
       data: {
-        totalPot: Number(wager.totalPot) + amount,
+        // Trust the contract's own accounting rather than adding locally.
+        totalPot: onChain.totalPot.toString(),
         status: 'ACTIVE',
       },
       include: { participants: { include: { user: true } }, creator: true },
