@@ -5,6 +5,8 @@
   "scripts": {
     "compile": "hardhat compile",
     "test": "hardhat test",
+    "node": "hardhat node",
+    "e2e": "hardhat run script/e2e.ts --network localhost",
     "deploy:sepolia": "hardhat run script/deploy.ts --network baseSepolia",
     "deploy:mainnet": "hardhat run script/deploy.ts --network base"
   },

@@ -20,6 +20,12 @@ const config: HardhatUserConfig = {
     tests: "./test",
   },
   networks: {
+    // Local chain for end-to-end runs: `npx hardhat node` in one shell, then
+    // `npm run e2e`. No faucet, no keys, no external dependency.
+    localhost: {
+      url: 'http://127.0.0.1:8545',
+      chainId: 31337,
+    },
     baseSepolia: {
       url: process.env.WEB3_RPC_URL || "https://sepolia.base.org",
       chainId: 84532,
