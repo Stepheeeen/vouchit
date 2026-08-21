@@ -9,9 +9,6 @@ export class UsersService {
   async findById(id: string) {
     const user = await this.prisma.user.findUnique({
       where: { id },
-      include: {
-        wallet: true,
-      },
     });
     if (!user) throw new NotFoundException('User not found');
     const { password, otp, otpExpiresAt, ...safeUser } = user;
@@ -54,25 +51,14 @@ export class UsersService {
     };
   }
 
-  async updateMe(id: string, data: { displayName?: string; bio?: string; phone?: string; avatarUrl?: string }) {
-    if (data.phone) {
-      const existing = await this.prisma.user.findFirst({
-        where: { phone: data.phone, id: { not: id } },
-      });
-      if (existing) {
-        throw new BadRequestException('Phone number is already in use');
-      }
-    }
-
+  async updateMe(id: string, data: { displayName?: string; bio?: string; avatarUrl?: string }) {
     const updated = await this.prisma.user.update({
       where: { id },
       data: {
         ...(data.displayName !== undefined && { displayName: data.displayName }),
         ...(data.bio !== undefined && { bio: data.bio }),
-        ...(data.phone !== undefined && { phone: data.phone }),
         ...(data.avatarUrl !== undefined && { avatarUrl: data.avatarUrl }),
       },
-      include: { wallet: true },
     });
     return updated;
   }
@@ -94,7 +80,7 @@ export class UsersService {
     const settledWagers = await this.prisma.wager.findMany({
       where: { status: 'SETTLED', winnerId: { not: null } },
       include: {
-        participants: { include: { user: { include: { wallet: true } } } },
+        participants: { include: { user: true } },
       },
     });
 
@@ -160,11 +146,7 @@ export class UsersService {
   async exportMyData(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      include: {
-        // Transactions hang off ledger entries, not the wallet directly.
-        wallet: { include: { ledgerEntries: { include: { transaction: true } } } },
-        notifications: true,
-      },
+      include: { notifications: true },
     });
     if (!user) throw new NotFoundException('User not found');
 

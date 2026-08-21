@@ -43,15 +43,7 @@ export class AuthService {
           password: hashedPassword,
           otp,
           otpExpiresAt,
-          wallet: {
-            create: {
-              availableBalance: 0,
-              escrowBalance: 0,
-              lockedBalance: 0,
-            },
-          },
         },
-        include: { wallet: true },
       });
     }
 
@@ -75,7 +67,7 @@ export class AuthService {
   }
 
   async verifyEmail(email: string, otp: string) {
-    const user = await this.prisma.user.findUnique({ where: { email }, include: { wallet: true } });
+    const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) throw new UnauthorizedException('User not found');
 
     if (user.otp !== otp || !user.otpExpiresAt || user.otpExpiresAt < new Date()) {
@@ -97,7 +89,7 @@ export class AuthService {
   }
 
   async login(email: string, passwordHash: string) {
-    const user = await this.prisma.user.findUnique({ where: { email }, include: { wallet: true } });
+    const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) throw new UnauthorizedException('Invalid credentials');
 
     const isValid = await bcrypt.compare(passwordHash, user.password);

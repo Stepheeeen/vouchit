@@ -13,11 +13,6 @@ async function main() {
     if (user) {
       console.log('Admin user already exists, resetting...');
       if (user.id) {
-        // Delete wallet first to avoid relation issues
-        const wallet = await prisma.wallet.findUnique({ where: { userId: user.id } });
-        if (wallet) {
-          await prisma.wallet.delete({ where: { id: wallet.id } });
-        }
         await prisma.user.delete({ where: { id: user.id } });
       }
     }
@@ -30,22 +25,14 @@ async function main() {
         emailVerified: true,
         displayName: 'System Admin',
         role: 'ADMIN',
-        wallet: {
-          create: {
-            availableBalance: 0,
-            escrowBalance: 0,
-            lockedBalance: 0,
-          },
-        },
       },
-      include: { wallet: true },
+      
     });
     
     console.log('Created Admin Account:');
     console.log(`Email: ${email}`);
     console.log(`Password: ${password}`);
     console.log(`Role: ${newUser.role}`);
-    console.log('Wallet Balance:', newUser.wallet?.availableBalance);
   } catch (error) {
     console.error('Failed to create admin account:', error);
   } finally {

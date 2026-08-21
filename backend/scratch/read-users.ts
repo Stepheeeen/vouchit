@@ -6,7 +6,6 @@ async function main() {
   try {
     const users = await prisma.user.findMany({
       include: {
-        wallet: true,
       }
     });
     console.log('Users:');

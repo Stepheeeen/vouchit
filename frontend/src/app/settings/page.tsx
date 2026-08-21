@@ -61,9 +61,7 @@ export default function SettingsPage() {
   // Profile Form
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
-  const [phone, setPhone] = useState("");
   const [bio, setBio] = useState("");
-  const [showPhone, setShowPhone] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
   const [saved, setSaved] = useState(false);
   const [profileError, setProfileError] = useState("");
@@ -82,7 +80,6 @@ export default function SettingsPage() {
   const [notifDispute, setNotifDispute] = useState(true);
   const [notifMarketing, setNotifMarketing] = useState(false);
   const [notifEmail, setNotifEmail] = useState(true);
-  const [notifSMS, setNotifSMS] = useState(false);
 
   // Security toggles
   const [twoFA, setTwoFA] = useState(false);
@@ -163,7 +160,6 @@ export default function SettingsPage() {
 
         setName(profile.displayName || "");
         setEmail(profile.email || "");
-        setPhone(profile.phone || "");
         setBio(profile.bio || "");
         setAvatarUrl(profile.avatarUrl || null);
 
@@ -173,7 +169,6 @@ export default function SettingsPage() {
         setNotifDispute(localStorage.getItem("notifDispute") !== "false");
         setNotifMarketing(localStorage.getItem("notifMarketing") === "true");
         setNotifEmail(localStorage.getItem("notifEmail") !== "false");
-        setNotifSMS(localStorage.getItem("notifSMS") === "true");
         setTwoFA(localStorage.getItem("twoFA") === "true");
         setBiometric(localStorage.getItem("biometric") === "true");
         setLoginAlerts(localStorage.getItem("loginAlerts") !== "false");
@@ -194,7 +189,7 @@ export default function SettingsPage() {
     setProfileError("");
     try {
       const { userApi } = await import("@/lib/api");
-      await userApi.updateProfile({ displayName: name, phone, bio });
+      await userApi.updateProfile({ displayName: name, bio });
       setSaved(true);
       const { toast } = await import("sonner");
       toast.success("Profile updated successfully!");
@@ -396,27 +391,6 @@ export default function SettingsPage() {
                     </div>
                   </div>
 
-                  <div className="flex flex-col gap-1.5">
-                    <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Phone Number</label>
-                    <div className="flex gap-0 border border-[var(--border)] rounded-xl overflow-hidden focus-within:border-[var(--primary)] transition-colors">
-                      <div className="flex-1 relative">
-                        <input
-                          type={showPhone ? "text" : "password"}
-                          value={phone}
-                          onChange={e => setPhone(e.target.value)}
-                          placeholder="e.g. +2348012345678"
-                          className="w-full pl-4 pr-10 py-2.5 text-sm bg-white focus:outline-none"
-                        />
-                        <button
-                          onClick={() => setShowPhone(!showPhone)}
-                          className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--muted-foreground)]"
-                        >
-                          {showPhone ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                        </button>
-                      </div>
-                    </div>
-                    <p className="text-xs text-[var(--muted-foreground)]">Your phone number is used for login and verification only.</p>
-                  </div>
 
                   <div className="flex flex-col gap-1.5">
                     <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Bio</label>
@@ -486,13 +460,6 @@ export default function SettingsPage() {
                       const val = !notifEmail;
                       setNotifEmail(val);
                       localStorage.setItem("notifEmail", String(val));
-                    }} />
-                  </SettingRow>
-                  <SettingRow label="SMS Alerts" sub={phone || "No phone added"}>
-                    <Toggle enabled={notifSMS} onToggle={() => {
-                      const val = !notifSMS;
-                      setNotifSMS(val);
-                      localStorage.setItem("notifSMS", String(val));
                     }} />
                   </SettingRow>
                 </div>

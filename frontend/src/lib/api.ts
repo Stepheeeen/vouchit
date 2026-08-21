@@ -88,7 +88,7 @@ export const wagersApi = {
 
 export const userApi = {
   getProfile: () => fetchApi('/users/me'),
-  updateProfile: (data: { displayName?: string; bio?: string; phone?: string; avatarUrl?: string }) =>
+  updateProfile: (data: { displayName?: string; bio?: string; avatarUrl?: string }) =>
     fetchApi('/users/me', { method: 'PATCH', body: JSON.stringify(data) }),
   getPublicProfile: (id: string) => fetchApi(`/users/${id}`),
   exportMyData: () => fetchApi('/users/me/export'),
@@ -100,22 +100,8 @@ export const web3Api = {
   linkWallet: (address: string, signature: string) =>
     fetchApi('/web3/link-wallet', { method: 'POST', body: JSON.stringify({ address, signature }) }),
   unlinkWallet: () => fetchApi('/web3/unlink-wallet', { method: 'DELETE' }),
-};
-
-export const walletApi = {
-  getBalances: () => fetchApi('/wallet'),
-  initializeDeposit: (amount: number) =>
-    fetchApi('/wallet/deposit/initialize', { method: 'POST', body: JSON.stringify({ amount }) }),
-  verifyDeposit: (reference: string) =>
-    fetchApi(`/wallet/deposit/verify?reference=${reference}`),
-  withdraw: (amount: number) =>
-    fetchApi('/wallet/withdraw', { method: 'POST', body: JSON.stringify({ amount }) }),
-  resolveBank: (accountNumber: string, bankCode: string) =>
-    fetchApi(`/wallet/bank/resolve?accountNumber=${accountNumber}&bankCode=${bankCode}`),
-  linkBank: (data: { bankCode: string, bankName: string, accountNumber: string, accountName: string }) =>
-    fetchApi('/wallet/bank', { method: 'POST', body: JSON.stringify(data) }),
-  getLinkedBank: () => fetchApi('/wallet/bank'),
-  unlinkBank: () => fetchApi('/wallet/bank', { method: 'DELETE' }),
+  /** Current verification tier, its signals, and the limits it unlocks. */
+  getVerification: () => fetchApi('/web3/verification'),
 };
 
 export const disputesApi = {

@@ -22,15 +22,8 @@ async function testRegister(email: string, passwordHash: string) {
         password: hashedPassword,
         otp,
         otpExpiresAt,
-        wallet: {
-          create: {
-            availableBalance: 0,
-            escrowBalance: 0,
-            lockedBalance: 0,
-          },
-        },
       },
-      include: { wallet: true },
+      
     });
     console.log('User created successfully:', user);
     

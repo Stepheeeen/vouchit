@@ -48,7 +48,6 @@ export class Web3Service {
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: { web3Address: normalizedAddress },
-      include: { wallet: true },
     });
 
     return { message: 'Wallet linked successfully', user };
@@ -93,7 +92,7 @@ export class Web3Service {
     userId: string,
     contractWagerId: string,
     expectedStake?: bigint,
-  ): Promise<{ creator: string; stakeAmount: bigint; token: string; status: number }> {
+  ): Promise<{ creator: string; stakeAmount: bigint; token: string; status: number; challenger: string }> {
     if (!/^0x[0-9a-fA-F]{64}$/.test(contractWagerId ?? '')) {
       throw new BadRequestException('contractWagerId must be a 32-byte hex string');
     }
@@ -140,7 +139,7 @@ export class Web3Service {
       throw new BadRequestException('On-chain stake does not match the submitted amount');
     }
 
-    return { creator, stakeAmount, token: onChain.token, status };
+    return { creator, stakeAmount, token: onChain.token, status, challenger: String(onChain.challenger) };
   }
 
   /** Raw read of an escrow entry. Callers decide what the state means. */

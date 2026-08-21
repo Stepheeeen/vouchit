@@ -4,6 +4,8 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { Web3Service } from '../web3/web3.service';
 import { findToken, parseTokenAmount, NATIVE_TOKEN_ADDRESS as ZERO_ADDRESS } from '../web3/tokens';
 import { OnChainWagerStatus } from '../web3/escrow.abi';
+import { VerificationService, TIER_LIMITS } from '../web3/verification.service';
+import { formatTokenAmount } from '../web3/tokens';
 
 @Injectable()
 export class WagersService {
@@ -11,6 +13,7 @@ export class WagersService {
     private prisma: PrismaService,
     private notificationsService: NotificationsService,
     private web3Service: Web3Service,
+    private verificationService: VerificationService,
   ) {}
 
   /**
@@ -70,6 +73,29 @@ export class WagersService {
       throw new BadRequestException(`Stake is below the ${token.symbol} minimum`);
     }
 
+    // Tier gates: bound how much damage a fresh account can do. These limit
+    // stake size and concurrency, not withdrawals — we hold no funds.
+    const { tier, limits } = await this.verificationService.refreshTier(userId);
+
+    const maxStake = token.tierMaxStake[tier] ?? null;
+    if (maxStake !== null && stakeAmount > maxStake) {
+      throw new BadRequestException(
+        `Your current tier allows stakes up to ${formatTokenAmount(maxStake, token.decimals)} ${token.symbol}. Verify your wallet to raise this limit.`,
+      );
+    }
+
+    const openWagers = await this.prisma.wager.count({
+      where: {
+        participants: { some: { userId } },
+        status: { in: ['PENDING_FUNDING', 'ACTIVE', 'DISPUTED'] },
+      },
+    });
+    if (openWagers >= limits.maxConcurrentWagers) {
+      throw new BadRequestException(
+        `Your current tier allows ${limits.maxConcurrentWagers} open wagers at a time. Settle one before creating another.`,
+      );
+    }
+
     // Stakes live in the escrow contract, never in our ledger, so the id must be
     // proven against the chain before the wager exists here. verifyOnChainWager
     // checks the escrow entry exists, was created by this user's linked wallet,
@@ -77,6 +103,15 @@ export class WagersService {
     const onChain = await this.web3Service.verifyOnChainWager(userId, contractWagerId, stakeAmount);
     if (onChain.token.toLowerCase() !== token.address) {
       throw new BadRequestException('On-chain stake token does not match the submitted currency');
+    }
+
+    // A zero challenger address means anyone can join. That is the riskier
+    // shape, so it is gated behind the verified tier.
+    const isOpenWager = onChain.challenger === '0x0000000000000000000000000000000000000000';
+    if (isOpenWager && !limits.canCreateOpenWagers) {
+      throw new BadRequestException(
+        'Your current tier can only create wagers aimed at a specific opponent. Verify your wallet to open wagers to anyone.',
+      );
     }
 
     const days = expiryDays && [1, 3, 7, 30].includes(expiryDays) ? expiryDays : 1;

@@ -15,6 +15,12 @@ export interface StakeToken {
   decimals: number;
   /** Smallest accepted stake, in base units. */
   minStake: bigint;
+  /**
+   * Maximum stake per verification tier, in base units, indexed by tier.
+   * `null` means uncapped. Tiers bound blast radius, not withdrawals — we hold
+   * no funds to withhold.
+   */
+  tierMaxStake: (bigint | null)[];
 }
 
 const BASE_MAINNET = 8453;
@@ -22,12 +28,38 @@ const BASE_SEPOLIA = 84532;
 
 const TOKENS_BY_CHAIN: Record<number, StakeToken[]> = {
   [BASE_MAINNET]: [
-    { address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913', symbol: 'USDC', decimals: 6, minStake: 1_000_000n },
-    { address: NATIVE_TOKEN_ADDRESS, symbol: 'ETH', decimals: 18, minStake: 200_000_000_000_000n },
+    {
+      address: '0x833589fcd6edb6e08f4c7c32d4f71b54bda02913',
+      symbol: 'USDC',
+      decimals: 6,
+      minStake: 1_000_000n,
+      // 25 / 250 / uncapped USDC
+      tierMaxStake: [25_000_000n, 250_000_000n, null],
+    },
+    {
+      address: NATIVE_TOKEN_ADDRESS,
+      symbol: 'ETH',
+      decimals: 18,
+      minStake: 200_000_000_000_000n,
+      // 0.01 / 0.1 / uncapped ETH
+      tierMaxStake: [10_000_000_000_000_000n, 100_000_000_000_000_000n, null],
+    },
   ],
   [BASE_SEPOLIA]: [
-    { address: '0x036cbd53842c5426634e7929541ec2318f3dcf7e', symbol: 'USDC', decimals: 6, minStake: 1_000_000n },
-    { address: NATIVE_TOKEN_ADDRESS, symbol: 'ETH', decimals: 18, minStake: 200_000_000_000_000n },
+    {
+      address: '0x036cbd53842c5426634e7929541ec2318f3dcf7e',
+      symbol: 'USDC',
+      decimals: 6,
+      minStake: 1_000_000n,
+      tierMaxStake: [25_000_000n, 250_000_000n, null],
+    },
+    {
+      address: NATIVE_TOKEN_ADDRESS,
+      symbol: 'ETH',
+      decimals: 18,
+      minStake: 200_000_000_000_000n,
+      tierMaxStake: [10_000_000_000_000_000n, 100_000_000_000_000_000n, null],
+    },
   ],
 };
 

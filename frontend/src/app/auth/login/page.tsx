@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowRight, Smartphone, Check, Eye, EyeOff, AlertCircle } from "lucide-react";
+import { ArrowRight, Check, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -137,11 +137,6 @@ export default function LoginPage() {
               {isLogin ? "Sign up" : "Login"}
             </button>
           </div>
-
-          <Button type="button" variant="outline" className="w-full flex items-center gap-2 rounded-none h-14 opacity-50 cursor-not-allowed">
-            <Smartphone className="h-4 w-4" />
-            <span className="text-xs font-semibold uppercase tracking-widest">Phone Login (Coming Soon)</span>
-          </Button>
         </form>
       </div>
     </main>

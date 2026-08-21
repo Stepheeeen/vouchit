@@ -13,11 +13,6 @@ async function main() {
     if (user) {
       console.log('Test user already exists, resetting...');
       if (user.id) {
-        // Delete wallet first to avoid relation issues
-        const wallet = await prisma.wallet.findUnique({ where: { userId: user.id } });
-        if (wallet) {
-          await prisma.wallet.delete({ where: { id: wallet.id } });
-        }
         await prisma.user.delete({ where: { id: user.id } });
       }
     }
@@ -29,21 +24,13 @@ async function main() {
         password: hashedPassword,
         emailVerified: true,
         displayName: 'Paystack Reviewer',
-        wallet: {
-          create: {
-            availableBalance: 10000, // ₦10,000 to test
-            escrowBalance: 0,
-            lockedBalance: 0,
-          },
-        },
       },
-      include: { wallet: true },
+      
     });
     
     console.log('Created Paystack Reviewer Account:');
     console.log(`Email: ${email}`);
     console.log(`Password: ${password}`);
-    console.log('Wallet Balance:', newUser.wallet?.availableBalance);
   } catch (error) {
     console.error('Failed to create reviewer account:', error);
   } finally {
