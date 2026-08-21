@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Trophy, Crown, Loader2 } from "lucide-react";
+import { formatEarnings } from "@/lib/web3/format";
 
 const podiumGradients = [
   "from-amber-400 to-yellow-600",
@@ -117,7 +118,7 @@ export default function LeaderboardPage() {
                     {getInitials(top3[1].name)}
                   </div>
                   <p className="font-semibold text-xs text-center truncate w-16">{top3[1].name}</p>
-                  <p className="text-xs font-bold text-[var(--muted-foreground)]">₦{(top3[1].totalEarned / 1000).toFixed(0)}k</p>
+                  <p className="text-xs font-bold text-[var(--muted-foreground)]">{formatEarnings(top3[1].earningsByToken)}</p>
                   <div className={`h-24 w-20 rounded-t-2xl bg-gradient-to-br ${podiumGradients[1]} flex items-end justify-center pb-2 shadow-md`}>
                     <span className="text-white font-bold text-2xl">2</span>
                   </div>
@@ -132,7 +133,7 @@ export default function LeaderboardPage() {
                     {getInitials(top3[0].name)}
                   </div>
                   <p className="font-semibold text-sm text-center truncate w-20">{top3[0].name}</p>
-                  <p className="text-sm font-bold text-[var(--primary)]">₦{(top3[0].totalEarned / 1000).toFixed(0)}k</p>
+                  <p className="text-sm font-bold text-[var(--primary)]">{formatEarnings(top3[0].earningsByToken)}</p>
                   <div
                     className={`h-32 w-20 rounded-t-2xl bg-gradient-to-br ${podiumGradients[0]} flex items-end justify-center pb-2`}
                     style={{ boxShadow: "0 8px 24px rgba(251,191,36,0.3)" }}
@@ -146,7 +147,7 @@ export default function LeaderboardPage() {
                     {getInitials(top3[2].name)}
                   </div>
                   <p className="font-semibold text-xs text-center truncate w-16">{top3[2].name}</p>
-                  <p className="text-xs font-bold text-[var(--muted-foreground)]">₦{(top3[2].totalEarned / 1000).toFixed(0)}k</p>
+                  <p className="text-xs font-bold text-[var(--muted-foreground)]">{formatEarnings(top3[2].earningsByToken)}</p>
                   <div className={`h-16 w-20 rounded-t-2xl bg-gradient-to-br ${podiumGradients[2]} flex items-end justify-center pb-2 shadow-md`}>
                     <span className="text-white font-bold text-2xl">3</span>
                   </div>
@@ -162,7 +163,7 @@ export default function LeaderboardPage() {
                     <div>
                       <p className="font-semibold">{myEntry.name}</p>
                       <p className="text-xs text-[var(--muted-foreground)]">
-                        {myEntry.wins} wins · {myEntry.winRate}% rate · ₦{(myEntry.totalEarned / 1000).toFixed(1)}k earned
+                        {myEntry.wins} wins · {myEntry.winRate}% rate · {formatEarnings(myEntry.earningsByToken)} earned
                       </p>
                     </div>
                   </div>
@@ -208,7 +209,7 @@ export default function LeaderboardPage() {
 
                     <div className="text-right">
                       <span className={`text-sm font-bold ${isMe ? "text-[var(--primary)]" : ""}`}>
-                        ₦{(p.totalEarned / 1000).toFixed(1)}k
+                        {formatEarnings(p.earningsByToken)}
                       </span>
                     </div>
                   </div>

@@ -8,6 +8,7 @@ import {
   ExternalLink, Calendar, Users, Scale, FileText, ArrowLeft, Loader2 
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { formatStake } from "@/lib/web3/format";
 import { Badge } from "@/components/ui/badge";
 
 type DisputeStatus = "ALL" | "OPEN" | "RESOLVED";
@@ -198,7 +199,7 @@ export default function AdminDisputesPage() {
                     <div className="flex flex-wrap items-center justify-between gap-4 pt-3 border-t border-[var(--border)] text-xs text-[var(--muted-foreground)]">
                       <div className="flex items-center gap-1">
                         <Users className="h-3.5 w-3.5" />
-                        <span>Pot: ₦{wager?.totalPot?.toLocaleString() || "0"}</span>
+                        <span>Pot: {formatStake(wager?.totalPot, wager ?? {})}</span>
                       </div>
                       <div className="flex items-center gap-1">
                         <FileText className="h-3.5 w-3.5" />
@@ -232,20 +233,20 @@ export default function AdminDisputesPage() {
 
               {/* The stakes */}
               <div className="bg-[var(--muted)]/30 border border-[var(--border)] p-4 rounded-xl flex flex-col gap-3">
-                <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--muted-foreground)]">The Stakes (Total: ₦{selectedDispute.wager?.totalPot?.toLocaleString()})</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-[var(--muted-foreground)]">The Stakes (Total: {formatStake(selectedDispute.wager?.totalPot, selectedDispute.wager ?? {})})</p>
                 <div className="flex justify-between text-xs font-semibold">
                   <div>
                     <span className="text-[var(--muted-foreground)]">Creator: </span>
                     <span className="text-[var(--foreground)]">{getWagerParticipant(selectedDispute.wager, "CREATOR")?.user?.displayName || "Creator"}</span>
                   </div>
-                  <span className="text-[var(--foreground)]">₦{getWagerParticipant(selectedDispute.wager, "CREATOR")?.amount?.toLocaleString() || 0}</span>
+                  <span className="text-[var(--foreground)]">{formatStake(getWagerParticipant(selectedDispute.wager, "CREATOR")?.amount, selectedDispute.wager ?? {})}</span>
                 </div>
                 <div className="flex justify-between text-xs font-semibold">
                   <div>
                     <span className="text-[var(--muted-foreground)]">Challenger: </span>
                     <span className="text-[var(--foreground)]">{getWagerParticipant(selectedDispute.wager, "CHALLENGER")?.user?.displayName || "Challenger"}</span>
                   </div>
-                  <span className="text-[var(--foreground)]">₦{getWagerParticipant(selectedDispute.wager, "CHALLENGER")?.amount?.toLocaleString() || 0}</span>
+                  <span className="text-[var(--foreground)]">{formatStake(getWagerParticipant(selectedDispute.wager, "CHALLENGER")?.amount, selectedDispute.wager ?? {})}</span>
                 </div>
               </div>
 

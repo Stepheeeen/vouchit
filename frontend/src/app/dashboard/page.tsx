@@ -7,6 +7,7 @@ import {
   Plus, Users, ArrowUpRight, ArrowDownRight,
   Flame, TrendingUp, ChevronRight, Clock, Loader2
 } from "lucide-react";
+import { formatStake, formatStakeCompact, applyProtocolFee, formatEarnings, sumByToken } from "@/lib/web3/format";
 
 const quickActions = [
   { href: "/vouch/create", icon: Plus,       label: "Create Wager", sub: "Start a new bet"   },
@@ -57,9 +58,20 @@ export default function Home() {
   const lostWagers = settledWagers.filter(w => w.winnerId && w.winnerId !== user.id);
   
   const winRate = settledWagers.length > 0 ? Math.round((wonWagers.length / settledWagers.length) * 100) : 0;
-  const totalWonAmount = wonWagers.reduce((sum, w) => sum + (Number(w.totalPot) * 0.975), 0);
-  const escrowAmount = Number(user.wallet?.escrowBalance) || 0;
-  const availableBalance = Number(user.wallet?.availableBalance) || 0;
+  // Stakes are held by the escrow contract, per token — there is no single
+  // custodial balance to show, so these are aggregated by token symbol.
+  const totalWonByToken = sumByToken(wonWagers, (w) => applyProtocolFee(w.totalPot).payout);
+  const inEscrowByToken = sumByToken(
+    wagers.filter((w) => w.status === "ACTIVE" || w.status === "PENDING_FUNDING"),
+    (w) => {
+      const mine = w.participants?.find((p: any) => p.userId === user.id);
+      try {
+        return BigInt(mine?.amount ?? "0");
+      } catch {
+        return 0n;
+      }
+    },
+  );
 
   // Generate recent activity from wagers
   const activity = wagers
@@ -73,7 +85,7 @@ export default function Home() {
         return {
           type: isWinner ? "win" : "loss",
           label: `${isWinner ? "Won" : "Lost"} Wager: ${w.description.slice(0, 20)}...`,
-          amount: isWinner ? `+₦${(Number(w.totalPot) * 0.975).toLocaleString()}` : `−₦${Number(myParticipant?.amount || 0).toLocaleString()}`,
+          amount: isWinner ? `+${formatStake(applyProtocolFee(w.totalPot).payout, w)}` : `−${formatStake(myParticipant?.amount, w)}`,
           time: new Date(w.updatedAt || w.createdAt).toLocaleDateString(),
           icon: isWinner ? ArrowUpRight : ArrowDownRight
         };
@@ -81,7 +93,7 @@ export default function Home() {
         return {
           type: "deposit",
           label: `Staked on: ${w.description.slice(0, 20)}...`,
-          amount: `−₦${Number(myParticipant?.amount || 0).toLocaleString()}`,
+          amount: `−${formatStake(myParticipant?.amount, w)}`,
           time: new Date(w.createdAt).toLocaleDateString(),
           icon: ArrowDownRight
         };
@@ -112,20 +124,23 @@ export default function Home() {
             </div>
 
             <div className="relative z-10">
-              <p className="text-white/70 text-[10px] font-semibold uppercase tracking-widest mb-1">Available Balance</p>
-              <p className="text-4xl md:text-5xl lg:text-6xl font-bold text-white tracking-tight mb-6">
-                ₦{availableBalance.toLocaleString()}
+              <p className="text-white/70 text-[10px] font-semibold uppercase tracking-widest mb-1">In Escrow</p>
+              <p className="text-4xl md:text-5xl lg:text-6xl font-bold text-white tracking-tight mb-2">
+                {formatEarnings(inEscrowByToken)}
+              </p>
+              <p className="text-white/60 text-[10px] font-semibold uppercase tracking-widest mb-6">
+                Locked in the escrow contract · Vouchit never holds your funds
               </p>
 
               <div className="flex flex-wrap items-center gap-4 bg-white/10 rounded-xl p-4">
                 <div className="flex-1 min-w-[100px]">
-                  <p className="text-white/60 text-[10px] uppercase tracking-widest font-semibold">In Escrow</p>
-                  <p className="text-white font-semibold text-base mt-0.5">₦{escrowAmount.toLocaleString()}</p>
+                  <p className="text-white/60 text-[10px] uppercase tracking-widest font-semibold">Open Wagers</p>
+                  <p className="text-white font-semibold text-base mt-0.5">{activeWagers.length}</p>
                 </div>
                 <div className="h-8 w-px bg-white/20 hidden sm:block" />
                 <div className="flex-1 min-w-[100px]">
                   <p className="text-white/60 text-[10px] uppercase tracking-widest font-semibold">All-Time Won</p>
-                  <p className="text-white font-semibold text-base mt-0.5">₦{totalWonAmount.toLocaleString()}</p>
+                  <p className="text-white font-semibold text-base mt-0.5">{formatEarnings(totalWonByToken)}</p>
                 </div>
                 <div className="h-8 w-px bg-white/20 hidden sm:block" />
                 <div className="flex-1 min-w-[100px]">
@@ -211,11 +226,11 @@ export default function Home() {
                       <div className="flex justify-between items-end pt-3 border-t border-[var(--border)]">
                         <div>
                           <p className="text-[10px] text-[var(--muted-foreground)] font-semibold uppercase tracking-wider">Your Stake</p>
-                          <p className="font-semibold text-base text-[var(--foreground)] mt-0.5">₦{Number(myParticipant?.amount || 0).toLocaleString()}</p>
+                          <p className="font-semibold text-base text-[var(--foreground)] mt-0.5">{formatStake(myParticipant?.amount, w)}</p>
                         </div>
                         <div className="text-center">
                           <p className="text-[10px] text-[var(--muted-foreground)] font-semibold uppercase tracking-wider">Pot</p>
-                          <p className="font-bold text-xl text-[var(--primary)] mt-0.5">₦{(Number(w.totalPot) / 1000).toFixed(0)}k</p>
+                          <p className="font-bold text-xl text-[var(--primary)] mt-0.5">{formatStakeCompact(w.totalPot, w)}</p>
                         </div>
                         <div className="text-right">
                           <p className="text-[10px] text-[var(--muted-foreground)] font-semibold uppercase tracking-wider">Expires</p>

@@ -65,8 +65,9 @@ export class WagersController {
   async settleWager(
     @Request() req: any,
     @Param('id') id: string,
-    @Body() body: { winnerId: string },
   ) {
-    return this.wagersService.settleWager(id, req.user.userId, body.winnerId);
+    // The winner is decided by on-chain votes, so there is nothing to accept
+    // from the client here — this just syncs our records with the contract.
+    return this.wagersService.settleWager(id, req.user.userId);
   }
 }

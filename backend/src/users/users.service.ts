@@ -61,24 +61,33 @@ export class UsersService {
       },
     });
 
-    // Aggregate wins & earnings per user
-    const statsMap = new Map<string, { user: any; wins: number; losses: number; totalEarned: number }>();
+    // Aggregate wins and earnings per user. Earnings are tracked per token —
+    // stakes can be USDC or ETH, and summing them into one figure would be
+    // meaningless, so we never collapse them into a single number.
+    const statsMap = new Map<
+      string,
+      { user: any; wins: number; losses: number; earnings: Map<string, bigint> }
+    >();
 
     for (const wager of settledWagers) {
       for (const participant of wager.participants) {
         const uid = participant.userId;
         if (!statsMap.has(uid)) {
-          statsMap.set(uid, {
-            user: participant.user,
-            wins: 0,
-            losses: 0,
-            totalEarned: 0,
-          });
+          statsMap.set(uid, { user: participant.user, wins: 0, losses: 0, earnings: new Map() });
         }
         const entry = statsMap.get(uid)!;
         if (wager.winnerId === uid) {
           entry.wins += 1;
-          entry.totalEarned += Number(wager.totalPot) * 0.975; // after 2.5% fee
+          // Mirror the contract's fee: payout = pot - (pot * 250 / 10000).
+          let pot: bigint;
+          try {
+            pot = BigInt(wager.totalPot ?? '0');
+          } catch {
+            pot = 0n;
+          }
+          const payout = pot - (pot * 250n) / 10_000n;
+          const symbol = wager.tokenSymbol;
+          entry.earnings.set(symbol, (entry.earnings.get(symbol) ?? 0n) + payout);
         } else {
           entry.losses += 1;
         }
@@ -94,9 +103,13 @@ export class UsersService {
         losses: s.losses,
         total: s.wins + s.losses,
         winRate: s.wins + s.losses > 0 ? Math.round((s.wins / (s.wins + s.losses)) * 100) : 0,
-        totalEarned: Math.round(s.totalEarned),
+        /** Base-unit earnings keyed by token symbol, e.g. { USDC: "125000000" }. */
+        earningsByToken: Object.fromEntries(
+          Array.from(s.earnings.entries()).map(([symbol, amount]) => [symbol, amount.toString()]),
+        ),
       }))
-      .sort((a, b) => b.wins - a.wins || b.totalEarned - a.totalEarned)
+      // Ranked on record alone; cross-token earnings are not comparable.
+      .sort((a, b) => b.wins - a.wins || b.winRate - a.winRate)
       .slice(0, 20)
       .map((s, i) => ({ ...s, rank: i + 1 }));
 

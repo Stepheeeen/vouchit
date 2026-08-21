@@ -5,6 +5,8 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Clock, CheckCircle2, AlertCircle, Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { formatStake, formatStakeCompact, applyProtocolFee } from "@/lib/web3/format";
+import { useEscrow } from "@/lib/web3/useEscrow";
 import { Badge } from "@/components/ui/badge";
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription, DialogFooter } from "@/components/ui/dialog";
 
@@ -19,6 +21,8 @@ const STATUS_BADGE: Record<string, { label: string; variant: any }> = {
 export default function ActiveVouchPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
+
+  const { voteWinner } = useEscrow();
 
   const [wager, setWager]           = useState<any>(null);
   const [currentUser, setCurrentUser] = useState<any>(null);
@@ -60,8 +64,17 @@ export default function ActiveVouchPage() {
     setSettleError("");
     setIsSettling(true);
     try {
+      // Vote on-chain first — the contract tallies the votes and pays out by
+      // itself the moment both sides agree. The API call only mirrors the result.
+      const winner = wager?.participants?.find((p: any) => p.userId === selectedWinner);
+      const winnerAddress = winner?.user?.web3Address;
+      if (!winnerAddress) {
+        throw new Error("That participant has no linked wallet, so they cannot be paid on-chain.");
+      }
+      await voteWinner(wager.contractWagerId, winnerAddress);
+
       const { wagersApi } = await import("@/lib/api");
-      const result = await wagersApi.settle(id, selectedWinner);
+      const result = await wagersApi.settle(id);
       setSettleResult(result);
       setIsSettleOpen(false);
       
@@ -69,7 +82,9 @@ export default function ActiveVouchPage() {
       if (result.status === "SETTLED") {
         toast.success(result.message || "Wager settled successfully!");
       } else if (result.status === "DISPUTED") {
-        toast.warning("Disagreement recorded. Dispute opened automatically.");
+        toast.warning("This wager is under dispute. An admin will review it.");
+      } else if (result.status === "CONFLICT") {
+        toast.warning(result.message);
       } else {
         toast.info(result.message || "Vote recorded successfully!");
       }
@@ -199,7 +214,7 @@ export default function ActiveVouchPage() {
                   {myParticipant ? "You" : "Creator"}
                 </span>
                 <span className="font-bold text-2xl md:text-3xl">
-                  ₦{Number(myParticipant?.amount || wager.participants?.[0]?.amount || 0).toLocaleString()}
+                  {formatStake(myParticipant?.amount ?? wager.participants?.[0]?.amount, wager)}
                 </span>
                 <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--background)] bg-[var(--foreground)] px-2 py-0.5 mt-1">
                   {myParticipant?.status || "Pending"}
@@ -210,7 +225,7 @@ export default function ActiveVouchPage() {
               <div className="flex flex-col items-center justify-center w-1/3 border-x border-[var(--border)]">
                 <span className="text-[10px] uppercase font-semibold text-[var(--muted-foreground)] tracking-widest mb-2">Total Pot</span>
                 <span className="text-4xl md:text-5xl font-bold text-[var(--foreground)]">
-                  ₦{(Number(wager.totalPot) / 1000).toFixed(0)}k
+                  {formatStakeCompact(wager.totalPot, wager)}
                 </span>
               </div>
 
@@ -220,7 +235,7 @@ export default function ActiveVouchPage() {
                   {otherParticipant ? otherName : "Waiting…"}
                 </span>
                 <span className="font-bold text-2xl md:text-3xl">
-                  {otherParticipant ? `₦${Number(otherParticipant.amount).toLocaleString()}` : "—"}
+                  {otherParticipant ? formatStake(otherParticipant.amount, wager) : "—"}
                 </span>
                 {otherParticipant && (
                   <span className="text-[10px] font-semibold uppercase tracking-widest text-[var(--background)] bg-[var(--foreground)] px-2 py-0.5 mt-1">
@@ -361,7 +376,7 @@ export default function ActiveVouchPage() {
                 <div className="flex flex-col items-start">
                   <span className="font-bold text-xl uppercase tracking-tighter">I Won</span>
                   <span className={`text-[10px] font-semibold uppercase tracking-widest ${selectedWinner === currentUser.id ? "text-[var(--background)]" : "text-[var(--muted-foreground)]"}`}>
-                    Claim ₦{(Number(wager.totalPot) * 0.975).toLocaleString(undefined, { maximumFractionDigits: 0 })}
+                    Claim {formatStake(applyProtocolFee(wager.totalPot).payout, wager)}
                   </span>
                 </div>
                 {selectedWinner === currentUser.id && <CheckCircle2 className="h-6 w-6" />}

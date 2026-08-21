@@ -5,38 +5,38 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Clock, Shield, AlertCircle, CheckCircle2, ShieldCheck, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
+import { useWeb3 } from "@/context/Web3Context";
+import { useEscrow } from "@/lib/web3/useEscrow";
+import { findToken } from "@/lib/web3/tokens";
+import { ACTIVE_CHAIN } from "@/lib/web3/config";
+import { formatStake, applyProtocolFee } from "@/lib/web3/format";
 
 export default function JoinVouchPage() {
   const params = useParams<{ id: string }>();
   const id = params.id;
   const router = useRouter();
 
+  const { isConnected, isCorrectChain, isConnecting, connectWallet } = useWeb3();
+  const { joinWager } = useEscrow();
+
   const [wager, setWager] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [stake, setStake] = useState("");
   const [isJoining, setIsJoining] = useState(false);
+  const [status, setStatus] = useState("");
   const [joined, setJoined] = useState(false);
   const [error, setError] = useState("");
-  const [wallet, setWallet] = useState<any>(null);
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const { wagersApi, userApi, walletApi } = await import("@/lib/api");
-        const [wagerData, profileData, walletData] = await Promise.all([
+        const { wagersApi, userApi } = await import("@/lib/api");
+        const [wagerData, profileData] = await Promise.all([
           wagersApi.getById(id),
           userApi.getProfile().catch(() => null),
-          walletApi.getBalances().catch(() => null),
         ]);
         setWager(wagerData);
-        setWallet(walletData);
         setCurrentUserId(profileData?.id || null);
-        // Pre-fill with creator's stake for symmetric wagers
-        if (wagerData?.participants?.[0]?.amount) {
-          setStake(String(Number(wagerData.participants[0].amount)));
-        }
       } catch {
         setError("Could not load wager. It may not exist or have expired.");
       } finally {
@@ -50,26 +50,36 @@ export default function JoinVouchPage() {
   const isFull = wager?.participants?.length >= 2;
   const isNotAvailable = wager?.status !== "PENDING_FUNDING";
 
-  const stakeAmount = Number(stake);
-  const hasEnoughBalance = wallet ? Number(wallet.availableBalance) >= stakeAmount : false;
-  const isStakeValid = stakeAmount >= 500;
-  const canJoin = isStakeValid && hasEnoughBalance && !isAlreadyParticipant && !isFull && !isNotAvailable;
+  // The stake is fixed by the escrow entry — a challenger always matches it.
+  const requiredStake: string | undefined = wager?.onChainStake;
+  const token = wager ? findToken(ACTIVE_CHAIN.id, wager.tokenAddress ?? "") : undefined;
+  const canJoin =
+    !!requiredStake && !!token && isConnected && isCorrectChain && !isAlreadyParticipant && !isFull && !isNotAvailable;
 
   const handleJoin = async () => {
     if (!canJoin || isJoining) return;
     setError("");
     setIsJoining(true);
     try {
+      // Match the stake in the escrow contract first; the API only records the
+      // join once the chain has accepted it.
+      setStatus("Confirm the transaction in your wallet…");
+      await joinWager(wager.contractWagerId, token!);
+
+      setStatus("Confirming your position…");
       const { wagersApi } = await import("@/lib/api");
-      await wagersApi.join(id, stakeAmount);
+      await wagersApi.join(id);
+
       setJoined(true);
       setTimeout(() => router.push(`/vouch/${id}`), 1800);
     } catch (err: any) {
-      setError(err.message || "Failed to join wager.");
+      const message = err?.shortMessage || err?.message || "Failed to join wager.";
+      setError(message);
       const { toast } = await import("sonner");
-      toast.error(err.message || "Failed to join wager.");
+      toast.error(message);
     } finally {
       setIsJoining(false);
+      setStatus("");
     }
   };
 
@@ -165,11 +175,11 @@ export default function JoinVouchPage() {
           <div className="grid grid-cols-3 gap-3">
             <div className="bg-white/15 rounded-xl p-3 text-center">
               <p className="text-white/60 text-[10px] font-semibold uppercase tracking-widest">Their Stake</p>
-              <p className="text-white font-bold text-lg mt-1">₦{Number(creatorParticipant?.amount || 0).toLocaleString()}</p>
+              <p className="text-white font-bold text-lg mt-1">{formatStake(creatorParticipant?.amount, wager)}</p>
             </div>
             <div className="bg-white rounded-xl p-3 text-center">
               <p className="text-[var(--primary)] text-[10px] font-semibold uppercase tracking-widest">Total Pot</p>
-              <p className="text-[var(--primary)] font-bold text-lg mt-1">₦{Number(wager.totalPot).toLocaleString()}</p>
+              <p className="text-[var(--primary)] font-bold text-lg mt-1">{formatStake(wager.totalPot, wager)}</p>
             </div>
             <div className="bg-white/15 rounded-xl p-3 text-center">
               <p className="text-white/60 text-[10px] font-semibold uppercase tracking-widest">Expires</p>
@@ -180,50 +190,34 @@ export default function JoinVouchPage() {
           </div>
         </div>
 
-        {/* Your stake input */}
+        {/* Your position — the stake is fixed by the escrow, so there is nothing to type */}
         {!isAlreadyParticipant && !isFull && !isNotAvailable && (
           <div className="bg-white border border-[var(--border)] rounded-2xl p-5" style={{ boxShadow: "var(--shadow-sm)" }}>
             <p className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-4 flex items-center justify-between">
               <span>Your Position</span>
-              {wager.isSymmetric && (
-                <span className="text-[9px] bg-[var(--primary)]/10 text-[var(--primary)] px-2 py-0.5 rounded font-bold uppercase tracking-wider">
-                  Symmetric Match
-                </span>
-              )}
+              <span className="text-[9px] bg-[var(--primary)]/10 text-[var(--primary)] px-2 py-0.5 rounded font-bold uppercase tracking-wider">
+                Matched Stake
+              </span>
             </p>
-            <div className="relative mb-3">
-              <span className="absolute left-4 top-1/2 -translate-y-1/2 font-semibold text-xl text-[var(--muted-foreground)]">₦</span>
-              <Input
-                type="number"
-                inputMode="numeric"
-                placeholder="5000"
-                value={stake}
-                onChange={(e) => setStake(e.target.value)}
-                disabled={wager.isSymmetric}
-                className="pl-10 text-2xl font-bold h-16 rounded-xl focus-visible:ring-0 focus-visible:border-[var(--foreground)] disabled:opacity-85 disabled:bg-[var(--muted)]/20"
-              />
+
+            <div className="flex items-baseline gap-2 mb-3">
+              <span className="text-3xl font-bold tracking-tight">{formatStake(requiredStake, wager)}</span>
             </div>
-            {wager.isSymmetric && (
-              <p className="text-[10px] text-amber-700 font-semibold mb-2">
-                This wager is symmetric. You must match the opponent's stake exactly.
-              </p>
-            )}
-            {wallet && (
-              <p className="text-xs text-[var(--muted-foreground)] font-semibold mb-1">
-                Available balance: <span className="text-[var(--foreground)]">₦{Number(wallet.availableBalance).toLocaleString()}</span>
-              </p>
-            )}
-            {stake && !isStakeValid && (
-              <p className="text-xs text-[var(--danger)] font-semibold">Minimum stake is ₦500.</p>
-            )}
-            {stake && isStakeValid && !hasEnoughBalance && (
+            <p className="text-[10px] text-[var(--muted-foreground)] font-semibold mb-3">
+              Locked directly in the escrow contract on {ACTIVE_CHAIN.name} — Vouchit never holds it.
+            </p>
+
+            {!isConnected ? (
+              <Button type="button" onClick={() => connectWallet()} disabled={isConnecting} className="w-full">
+                {isConnecting ? "CONNECTING…" : "CONNECT WALLET TO JOIN"}
+              </Button>
+            ) : !isCorrectChain ? (
               <p className="text-xs text-[var(--danger)] font-semibold">
-                Insufficient balance. <Link href="/wallet" className="underline">Fund wallet</Link>.
+                Switch your wallet to {ACTIVE_CHAIN.name} to join this wager.
               </p>
-            )}
-            {stake && isStakeValid && hasEnoughBalance && (
+            ) : (
               <p className="text-xs text-[var(--success)] font-semibold">
-                If you win: ₦{((stakeAmount + Number(creatorParticipant?.amount || stakeAmount)) * 0.975).toFixed(0)} after 2.5% fee.
+                If you win: {formatStake(applyProtocolFee(BigInt(requiredStake ?? "0") * 2n).payout, wager)} after the 2.5% protocol fee.
               </p>
             )}
           </div>
@@ -235,9 +229,9 @@ export default function JoinVouchPage() {
             <Shield className="h-4 w-4 text-[var(--primary)]" /> How it works
           </p>
           {[
-            "Your stake is locked in escrow immediately.",
+            "Your stake is locked in the escrow contract immediately.",
             "When the event concludes, both parties agree on the winner.",
-            "If agreed, funds are released instantly to the winner.",
+            "If you agree, the contract pays the winner automatically.",
             "Disagreements trigger a dispute with admin review.",
           ].map((rule, i) => (
             <div key={i} className="flex items-start gap-3 mb-2 last:mb-0">
@@ -261,13 +255,13 @@ export default function JoinVouchPage() {
               {isJoining ? (
                 <span className="flex items-center justify-center gap-2">
                   <span className="h-4 w-4 border-2 border-white/40 border-t-white rounded-full animate-spin" />
-                  Locking Stake…
+                  {status || "Locking Stake…"}
                 </span>
-              ) : `Accept & Lock ₦${stakeAmount > 0 ? stakeAmount.toLocaleString() : "stake"}`}
+              ) : `Accept & Lock ${formatStake(requiredStake, wager)}`}
             </button>
             <p className="text-center text-[10px] text-[var(--muted-foreground)] font-semibold mt-3 flex items-center justify-center gap-1">
               <ShieldCheck className="h-3 w-3 text-[var(--primary)]" />
-              Secured by Vouchit escrow engine
+              Secured by the VouchitEscrow contract
             </p>
           </div>
         </div>

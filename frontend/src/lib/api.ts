@@ -79,10 +79,11 @@ export const wagersApi = {
   getAll: () => fetchApi('/wagers'),
   getById: (id: string) => fetchApi(`/wagers/${id}`),
   getMy: () => fetchApi('/wagers/my'),
-  join: (id: string, amount: number) =>
-    fetchApi(`/wagers/${id}/join`, { method: 'POST', body: JSON.stringify({ amount }) }),
-  settle: (id: string, winnerId: string) =>
-    fetchApi(`/wagers/${id}/settle`, { method: 'POST', body: JSON.stringify({ winnerId }) }),
+  // The stake is fixed by the escrow entry, so there is no amount to send.
+  join: (id: string) => fetchApi(`/wagers/${id}/join`, { method: 'POST' }),
+  /** Sync our records with the escrow after voting on-chain. The winner is
+   *  decided by the contract, so nothing is sent. */
+  settle: (id: string) => fetchApi(`/wagers/${id}/settle`, { method: 'POST' }),
 };
 
 export const userApi = {

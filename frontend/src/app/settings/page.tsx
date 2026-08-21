@@ -8,7 +8,6 @@ import {
   ChevronRight, Check, Eye, EyeOff, Smartphone, Lock,
   Trash2, AlertTriangle, Camera, Loader2
 } from "lucide-react";
-import { NIGERIAN_BANKS } from "../wallet/page";
 
 function Toggle({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }) {
   return (
@@ -94,55 +93,12 @@ export default function SettingsPage() {
   const [publicProfile, setPublicProfile] = useState(true);
   const [showOnLeaderboard, setShowOnLeaderboard] = useState(true);
 
-  // Bank Account State
-  const [bankAccount, setBankAccount] = useState<{ accountName: string; accountNumber: string; bankName: string; bankCode?: string } | null>(null);
-  const [showBankModal, setShowBankModal] = useState(false);
-  const [bankName, setBankName] = useState("");
-  const [bankCode, setBankCode] = useState("");
-  const [accountNumber, setAccountNumber] = useState("");
-  const [accountName, setAccountName] = useState("");
-  const [isResolving, setIsResolving] = useState(false);
-  const [resolutionError, setResolutionError] = useState("");
-
   // KYC Verification State
   const [showKycModal, setShowKycModal] = useState(false);
   const [kycType, setKycType] = useState<"BVN" | "NIN">("BVN");
   const [kycNumber, setKycNumber] = useState("");
   const [isVerifyingKyc, setIsVerifyingKyc] = useState(false);
   const [kycError, setKycError] = useState("");
-
-  useEffect(() => {
-    const resolve = async () => {
-      if (accountNumber.length === 10 && bankCode) {
-        setIsResolving(true);
-        setResolutionError("");
-        setAccountName("");
-        try {
-          const { walletApi } = await import("@/lib/api");
-          const res = await walletApi.resolveBank(accountNumber, bankCode);
-          setAccountName(res.accountName);
-        } catch (err: any) {
-          setResolutionError(err.message || "Failed to resolve bank account.");
-        } finally {
-          setIsResolving(false);
-        }
-      } else {
-        setAccountName("");
-        setResolutionError("");
-      }
-    };
-    resolve();
-  }, [accountNumber, bankCode]);
-
-  useEffect(() => {
-    if (!showBankModal) {
-      setBankName("");
-      setBankCode("");
-      setAccountNumber("");
-      setAccountName("");
-      setResolutionError("");
-    }
-  }, [showBankModal]);
 
   useEffect(() => {
     if (!showKycModal) {
@@ -158,15 +114,6 @@ export default function SettingsPage() {
         const profile = await userApi.getProfile();
         setUser(profile);
 
-        try {
-          const { walletApi } = await import("@/lib/api");
-          const bank = await walletApi.getLinkedBank();
-          if (bank) {
-            setBankAccount(bank);
-          }
-        } catch (e) {
-          console.error(e);
-        }
         setName(profile.displayName || "");
         setEmail(profile.email || "");
         setPhone(profile.phone || "");
@@ -583,66 +530,22 @@ export default function SettingsPage() {
             {activeSection === "Payment" && (
               <div className="flex flex-col gap-4">
                 <div className="bg-white border border-[var(--border)] rounded-2xl p-6" style={{ boxShadow: "var(--shadow-sm)" }}>
-                  <SectionHeader icon={CreditCard} title="Payment Methods" subtitle="Manage your linked bank accounts." />
-                  {bankAccount ? (
-                    <div className="flex flex-col gap-4 mb-4">
-                      <div className="p-4 border border-[var(--border)] rounded-2xl bg-neutral-50 flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                          <div className="h-10 w-10 rounded-xl bg-[var(--primary)]/10 text-[var(--primary)] flex items-center justify-center font-bold text-lg">
-                            🏦
-                          </div>
-                          <div>
-                            <p className="text-sm font-bold text-[var(--foreground)]">{bankAccount.bankName}</p>
-                            <p className="text-xs text-[var(--muted-foreground)]">
-                              {bankAccount.accountNumber} · {bankAccount.accountName}
-                            </p>
-                          </div>
-                        </div>
-                        <button 
-                          onClick={async () => {
-                            try {
-                              const { walletApi } = await import("@/lib/api");
-                              await walletApi.unlinkBank();
-                              setBankAccount(null);
-                              const { toast } = await import("sonner");
-                              toast.success("Bank account unlinked.");
-                            } catch (e: any) {
-                              const { toast } = await import("sonner");
-                              toast.error("Failed to unlink bank account.");
-                            }
-                          }}
-                          className="text-xs font-semibold text-[var(--danger)] hover:bg-[var(--danger)]/5 border border-[var(--danger)]/20 px-3 py-1.5 rounded-xl transition-colors cursor-pointer"
-                        >
-                          Unlink
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-3 mb-4">
-                      <p className="text-sm text-[var(--muted-foreground)]">No bank account linked. Link your account to withdraw funds.</p>
-                    </div>
-                  )}
-
-                  {!bankAccount && (
-                    <button 
-                      onClick={() => setShowBankModal(true)}
-                      className="w-full py-3 rounded-xl border-2 border-dashed border-[var(--border)] text-sm font-semibold text-[var(--muted-foreground)] hover:border-[var(--primary)] hover:text-[var(--primary)] transition-colors flex items-center justify-center gap-2 cursor-pointer"
-                    >
-                      + Link Bank Account
-                    </button>
-                  )}
-                </div>
-
-                <div className="bg-white border border-[var(--border)] rounded-2xl p-6" style={{ boxShadow: "var(--shadow-sm)" }}>
-                  <p className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-4">Withdrawal Limit</p>
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-sm font-semibold">Daily Limit</span>
-                    <span className="text-sm font-bold text-[var(--primary)]">₦500,000</span>
-                  </div>
-                  <div className="h-2 bg-[var(--muted)] rounded-full overflow-hidden">
-                    <div className="h-full rounded-full" style={{ width: "0%", background: "linear-gradient(90deg,#0d9488,#0f766e)" }} />
-                  </div>
-                  <p className="text-xs text-[var(--muted-foreground)] mt-2">₦0 used today of ₦500,000 limit</p>
+                  <SectionHeader
+                    icon={CreditCard}
+                    title="Funds"
+                    subtitle="Vouchit is non-custodial — your funds never leave your wallet."
+                  />
+                  <p className="text-sm text-[var(--muted-foreground)] leading-relaxed mb-4">
+                    Stakes go straight from your wallet into the escrow contract, and payouts come
+                    straight back. There is no Vouchit balance to top up or withdraw, and no bank
+                    account to link.
+                  </p>
+                  <Link
+                    href="/wallet"
+                    className="w-full py-3 rounded-xl border-2 border-dashed border-[var(--border)] text-sm font-semibold text-[var(--muted-foreground)] hover:border-[var(--primary)] hover:text-[var(--primary)] transition-colors flex items-center justify-center gap-2 cursor-pointer"
+                  >
+                    Open wallet
+                  </Link>
                 </div>
               </div>
             )}
@@ -758,102 +661,6 @@ export default function SettingsPage() {
           </div>
         </div>
       </main>
-
-      {/* Link Bank Account Modal */}
-      {showBankModal && (
-        <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
-            <h2 className="text-xl font-bold mb-2">Link Bank Account</h2>
-            <p className="text-xs text-[var(--muted-foreground)] mb-4">
-              Enter your bank details to link your account for withdrawals.
-            </p>
-            <div className="flex flex-col gap-4">
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Select Bank</label>
-                <select
-                  value={bankCode}
-                  onChange={(e) => {
-                    const code = e.target.value;
-                    setBankCode(code);
-                    const selected = NIGERIAN_BANKS.find(b => b.code === code);
-                    setBankName(selected ? selected.name : "");
-                  }}
-                  className="w-full mt-1 p-3 border border-[var(--border)] rounded-xl font-semibold text-sm bg-white"
-                >
-                  <option value="">Select a Bank</option>
-                  {NIGERIAN_BANKS.map((b) => (
-                    <option key={b.code} value={b.code}>
-                      {b.name}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Account Number</label>
-                <input 
-                  type="text"
-                  maxLength={10}
-                  value={accountNumber}
-                  onChange={(e) => setAccountNumber(e.target.value.replace(/\D/g, ""))}
-                  placeholder="e.g. 0123456789"
-                  className="w-full mt-1 p-3 border border-[var(--border)] rounded-xl font-semibold text-sm"
-                />
-                {isResolving && (
-                  <p className="text-xs text-[var(--primary)] flex items-center gap-1.5 mt-1 font-semibold">
-                    <Loader2 className="h-3 w-3 animate-spin" /> Verifying account details...
-                  </p>
-                )}
-                {resolutionError && (
-                  <p className="text-xs text-[var(--danger)] mt-1 font-semibold">
-                    {resolutionError}
-                  </p>
-                )}
-              </div>
-              <div>
-                <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Account Name</label>
-                <input 
-                  type="text"
-                  value={accountName}
-                  readOnly
-                  placeholder={isResolving ? "Resolving account name..." : "Account name will auto-resolve"}
-                  className="w-full mt-1 p-3 border border-[var(--border)] rounded-xl font-semibold text-sm bg-neutral-50 text-neutral-500 cursor-not-allowed"
-                />
-              </div>
-              <div className="flex gap-3">
-                <button 
-                  onClick={() => setShowBankModal(false)}
-                  className="flex-1 py-3 font-semibold border border-[var(--border)] rounded-xl text-[var(--muted-foreground)] hover:bg-[var(--muted)]"
-                >
-                  Cancel
-                </button>
-                <button 
-                  onClick={async () => {
-                    if (!bankName || !accountNumber || !accountName) return;
-                    setIsResolving(true);
-                    try {
-                      const { walletApi } = await import("@/lib/api");
-                      const data = { bankName, bankCode, accountNumber, accountName };
-                      await walletApi.linkBank(data);
-                      setBankAccount(data);
-                      setShowBankModal(false);
-                      const { toast } = await import("sonner");
-                      toast.success("Bank account linked successfully!");
-                    } catch (err: any) {
-                      setResolutionError(err.message || "Failed to link bank account");
-                    } finally {
-                      setIsResolving(false);
-                    }
-                  }}
-                  disabled={!bankName || accountNumber.length !== 10 || !accountName || isResolving}
-                  className="flex-1 py-3 font-semibold bg-[var(--primary)] text-white rounded-xl disabled:opacity-50 disabled:cursor-not-allowed flex justify-center items-center"
-                >
-                  {isResolving ? <Loader2 className="h-5 w-5 animate-spin" /> : "Link Account"}
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
 
       {/* KYC Verification Modal */}
       {showKycModal && (

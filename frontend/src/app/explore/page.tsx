@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Flame, ChevronRight, Clock, Search, Loader2 } from "lucide-react";
+import { formatStakeCompact } from "@/lib/web3/format";
 
 const CATEGORIES = ["All", "Sports", "Crypto", "Lifestyle", "Entertainment", "Finance", "Other"];
 
@@ -113,7 +114,7 @@ export default function ExplorePage() {
               <div className="flex flex-col items-start md:items-end gap-3">
                 <div>
                   <p className="text-white/60 text-[10px] font-semibold uppercase tracking-widest">Total Pot</p>
-                  <p className="text-white font-bold text-3xl">₦{(Number(trending.totalPot) / 1000).toFixed(0)}k</p>
+                  <p className="text-white font-bold text-3xl">{formatStakeCompact(trending.totalPot, trending)}</p>
                 </div>
                 <Link href={`/vouch/join/${trending.id}`}>
                   <button className="bg-white text-[var(--primary)] text-xs font-bold uppercase tracking-widest px-5 py-3 rounded-xl hover:bg-[var(--muted)] transition-colors flex items-center gap-2 shadow-sm">
@@ -207,7 +208,7 @@ export default function ExplorePage() {
                           {Math.max(0, Math.round((new Date(w.expiresAt).getTime() - Date.now()) / 3600000))}h left
                         </div>
                         <span className="font-bold text-base text-[var(--primary)]">
-                          ₦{(Number(w.totalPot) / 1000).toFixed(0)}k
+                          {formatStakeCompact(w.totalPot, w)}
                         </span>
                       </div>
                     </div>

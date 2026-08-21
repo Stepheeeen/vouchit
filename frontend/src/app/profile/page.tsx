@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ArrowLeft, Trophy, TrendingUp, Star, Flame, Crown, Zap, Shield, Edit2, Settings, Share2, ChevronRight, Loader2 } from "lucide-react";
+import { formatStake, applyProtocolFee, formatEarnings, sumByToken } from "@/lib/web3/format";
 
 function getInitials(name: string) {
   return name
@@ -63,7 +64,8 @@ export default function ProfilePage() {
   const wonWagers = settled.filter((w) => w.winnerId === user.id);
   const lostWagers = settled.filter((w) => w.winnerId && w.winnerId !== user.id);
   
-  const totalWonAmount = wonWagers.reduce((sum, w) => sum + (Number(w.totalPot) * 0.975), 0);
+  // Winnings are per token; USDC and ETH are never summed together.
+  const totalWonByToken = sumByToken(wonWagers, (w) => applyProtocolFee(w.totalPot).payout);
   const winRate = settled.length > 0 ? Math.round((wonWagers.length / settled.length) * 100) : 0;
   
   // Wager history mapping
@@ -77,11 +79,11 @@ export default function ProfilePage() {
     if (w.status === "SETTLED") {
       result = isWinner ? "Won" : "Lost";
       amountStr = isWinner 
-        ? `+₦${(Number(w.totalPot) * 0.975).toLocaleString()}` 
-        : `−₦${Number(myParticipant?.amount || 0).toLocaleString()}`;
+        ? `+${formatStake(applyProtocolFee(w.totalPot).payout, w)}` 
+        : `−${formatStake(myParticipant?.amount, w)}`;
     } else if (w.status === "ACTIVE") {
       result = "Active";
-      amountStr = `₦${Number(myParticipant?.amount || 0).toLocaleString()} (Stake)`;
+      amountStr = `${formatStake(myParticipant?.amount, w)} (Stake)`;
     } else if (w.status === "DISPUTED") {
       result = "Disputed";
     }
@@ -183,7 +185,7 @@ export default function ProfilePage() {
                 </div>
                 <div>
                   <p className="font-bold text-xl md:text-2xl text-[var(--primary)] truncate">
-                    ₦{(totalWonAmount / 1000).toFixed(1)}k
+                    {formatEarnings(totalWonByToken)}
                   </p>
                   <p className="text-xs text-[var(--muted-foreground)] font-semibold mt-0.5">Total Won</p>
                 </div>

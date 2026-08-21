@@ -143,6 +143,34 @@ export class Web3Service {
     return { creator, stakeAmount, token: onChain.token, status };
   }
 
+  /** Raw read of an escrow entry. Callers decide what the state means. */
+  async getOnChainWager(contractWagerId: string) {
+    const escrow = this.getEscrowContract();
+    if (!escrow) {
+      throw new BadRequestException(
+        'On-chain wagers are unavailable: the escrow contract is not configured on this server.',
+      );
+    }
+    try {
+      const w = await escrow.wagers(contractWagerId);
+      return {
+        creator: String(w.creator),
+        challenger: String(w.challenger),
+        token: String(w.token),
+        stakeAmount: w.stakeAmount as bigint,
+        totalPot: w.totalPot as bigint,
+        status: Number(w.status) as OnChainWagerStatus,
+        winner: String(w.winner),
+        creatorVote: String(w.creatorVote),
+        challengerVote: String(w.challengerVote),
+        expiresAt: Number(w.expiresAt),
+      };
+    } catch (error: any) {
+      console.error('[Web3Service] Failed to read wager from chain:', error);
+      throw new BadRequestException('Could not reach the escrow contract');
+    }
+  }
+
   /**
    * Confirm that `userId`'s wallet has escrowed the matching stake and that the
    * escrow entry is now ACTIVE. Called when a challenger registers their join,

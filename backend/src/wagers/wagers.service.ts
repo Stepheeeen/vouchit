@@ -2,9 +2,8 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Web3Service } from '../web3/web3.service';
-import { findToken, parseTokenAmount } from '../web3/tokens';
-
-const FEE_RATE = 0.025; // 2.5%
+import { findToken, parseTokenAmount, NATIVE_TOKEN_ADDRESS as ZERO_ADDRESS } from '../web3/tokens';
+import { OnChainWagerStatus } from '../web3/escrow.abi';
 
 @Injectable()
 export class WagersService {
@@ -228,171 +227,113 @@ export class WagersService {
     return updated;
   }
 
-  async settleWager(wagerId: string, userId: string, winnerId: string) {
+  /**
+   * Sync settlement state from the escrow contract.
+   *
+   * Votes are cast on-chain (`voteWinner`), and the contract settles itself the
+   * moment both sides agree — it pays the winner and the treasury directly. This
+   * method never decides an outcome or moves money; it reads what the chain did
+   * and mirrors it, so our rows can't drift from the funds.
+   */
+  async settleWager(wagerId: string, userId: string) {
     const wager = await this.findOne(wagerId);
 
-    if (wager.status !== 'ACTIVE') {
-      throw new BadRequestException('This wager is not active');
+    if (!wager.contractWagerId) {
+      throw new BadRequestException('This wager has no escrow entry');
     }
-
-    // Verify userId is a participant
-    const participant = wager.participants.find((p) => p.userId === userId);
-    if (!participant) {
+    if (!wager.participants.some((p: any) => p.userId === userId)) {
       throw new BadRequestException('You are not a participant in this wager');
     }
 
-    // Verify winnerId is a participant
-    const winnerParticipant = wager.participants.find((p) => p.userId === winnerId);
-    if (!winnerParticipant) {
-      throw new BadRequestException('Winner must be a participant of this wager');
+    const onChain = await this.web3Service.getOnChainWager(wager.contractWagerId);
+
+    /** Map an on-chain address back to the participant who owns it. */
+    const participantByAddress = (address: string) =>
+      wager.participants.find(
+        (p: any) => p.user?.web3Address && p.user.web3Address.toLowerCase() === address.toLowerCase(),
+      );
+
+    // Mirror each side's on-chain vote onto its participant row.
+    const votes: Array<[string, string]> = [
+      [onChain.creator, onChain.creatorVote],
+      [onChain.challenger, onChain.challengerVote],
+    ];
+    for (const [voterAddress, votedFor] of votes) {
+      if (votedFor === ZERO_ADDRESS) continue;
+      const voter = participantByAddress(voterAddress);
+      const votedParticipant = participantByAddress(votedFor);
+      if (voter && votedParticipant && voter.settleVote !== votedParticipant.userId) {
+        await this.prisma.wagerParticipant.update({
+          where: { id: voter.id },
+          data: { settleVote: votedParticipant.userId },
+        });
+      }
     }
 
-    // Record this participant's settle vote
-    await this.prisma.wagerParticipant.update({
-      where: { wagerId_userId: { wagerId, userId } },
-      data: { settleVote: winnerId },
-    });
-
-    // Re-fetch to check if both have voted
-    const updatedParticipants = await this.prisma.wagerParticipant.findMany({
-      where: { wagerId },
-    });
-
-    const bothVoted = updatedParticipants.every((p) => p.settleVote !== null);
-
-    if (bothVoted) {
-      const votes = updatedParticipants.map((p) => p.settleVote);
-      const allAgree = votes.every((v) => v === votes[0]);
-
-      if (allAgree) {
-        // ✅ Unanimous — settle the wager
-        return await this._executeSettlement(wager, votes[0]!);
-      } else {
-        // ❌ Disagreement — auto-open dispute
+    if (onChain.status === OnChainWagerStatus.SETTLED) {
+      const winner = participantByAddress(onChain.winner);
+      if (!winner) {
+        throw new BadRequestException('The on-chain winner does not match any participant');
+      }
+      if (wager.status !== 'SETTLED') {
         await this.prisma.wager.update({
           where: { id: wagerId },
-          data: { status: 'DISPUTED' },
+          data: { status: 'SETTLED', winnerId: winner.userId },
         });
-        // Create dispute if it doesn't exist
+
+        try {
+          const winnerName =
+            winner.user?.displayName || winner.user?.email.split('@')[0] || 'The winner';
+          for (const p of wager.participants) {
+            const msg =
+              p.userId === winner.userId
+                ? `You won "${wager.description.slice(0, 40)}". The escrow paid your winnings on-chain, less the 2.5% protocol fee.`
+                : `"${wager.description.slice(0, 40)}" has been settled. Winner: ${winnerName}.`;
+            await this.notificationsService.createNotification(p.userId, 'WAGER_SETTLED', msg);
+          }
+        } catch (err) {
+          console.error('Failed to send settlement notifications:', err);
+        }
+      }
+      return { status: 'SETTLED', winnerId: winner.userId, message: 'Settled on-chain.' };
+    }
+
+    if (onChain.status === OnChainWagerStatus.DISPUTED) {
+      if (wager.status !== 'DISPUTED') {
+        await this.prisma.wager.update({ where: { id: wagerId }, data: { status: 'DISPUTED' } });
         const existing = await this.prisma.dispute.findUnique({ where: { wagerId } });
         if (!existing) {
-          await this.prisma.dispute.create({
-            data: { wagerId, status: 'OPEN' },
-          });
+          await this.prisma.dispute.create({ data: { wagerId, status: 'OPEN' } });
         }
-
         try {
           for (const p of wager.participants) {
             await this.notificationsService.createNotification(
               p.userId,
               'DISPUTE_OPENED',
-              `A dispute has been automatically opened for the wager: "${wager.description.slice(0, 40)}${wager.description.length > 40 ? '...' : ''}" due to conflicting votes.`
+              `A dispute was opened for "${wager.description.slice(0, 40)}". An admin will review it.`,
             );
           }
         } catch (err) {
           console.error('Failed to send dispute notifications:', err);
         }
-
-        return { status: 'DISPUTED', message: 'Participants disagree — dispute opened automatically.' };
       }
+      return { status: 'DISPUTED', message: 'This wager is under dispute.' };
+    }
+
+    const bothVoted = onChain.creatorVote !== ZERO_ADDRESS && onChain.challengerVote !== ZERO_ADDRESS;
+    if (bothVoted && onChain.creatorVote !== onChain.challengerVote) {
+      // The contract leaves conflicting votes ACTIVE — someone has to call
+      // openDispute on-chain. Surface that instead of silently disputing here.
+      return {
+        status: 'CONFLICT',
+        message: 'You and your opponent named different winners. Open a dispute to have it reviewed.',
+      };
     }
 
     return {
       status: 'VOTE_RECORDED',
-      message: 'Your vote has been recorded. Waiting for opponent to confirm.',
+      message: 'Your vote is recorded on-chain. Waiting for your opponent to confirm.',
     };
   }
 
-  private async _executeSettlement(wager: any, winnerUserId: string) {
-    const pot = Number(wager.totalPot);
-    const fee = pot * FEE_RATE;
-    const payout = pot - fee;
-
-    const settled = await this.prisma.$transaction(async (tx) => {
-      // Credit winner's available balance
-      const winnerWallet = await tx.wallet.findUnique({ where: { userId: winnerUserId } });
-      if (winnerWallet) {
-        await tx.wallet.update({
-          where: { userId: winnerUserId },
-          data: {
-            availableBalance: Number(winnerWallet.availableBalance) + payout,
-            escrowBalance: Math.max(0, Number(winnerWallet.escrowBalance) - Number(wager.participants.find((p: any) => p.userId === winnerUserId)?.amount || 0)),
-            ledgerEntries: {
-              create: {
-                amount: payout,
-                type: 'WIN',
-                description: `Won wager: ${wager.description.slice(0, 40)}`,
-              },
-            },
-          },
-        });
-      }
-
-      // Deduct escrow from loser(s)
-      for (const participant of wager.participants) {
-        if (participant.userId !== winnerUserId) {
-          const loserWallet = await tx.wallet.findUnique({ where: { userId: participant.userId } });
-          if (loserWallet) {
-            await tx.wallet.update({
-              where: { userId: participant.userId },
-              data: {
-                escrowBalance: Math.max(0, Number(loserWallet.escrowBalance) - Number(participant.amount)),
-                ledgerEntries: {
-                  create: {
-                    amount: -Number(participant.amount),
-                    type: 'ESCROW_RELEASE',
-                    description: `Lost wager: ${wager.description.slice(0, 40)}`,
-                  },
-                },
-              },
-            });
-          }
-        }
-      }
-
-      // Update all participant statuses
-      await tx.wagerParticipant.updateMany({
-        where: { wagerId: wager.id },
-        data: { status: 'FUNDED' },
-      });
-
-      // Update wager to settled
-      const settled = await tx.wager.update({
-        where: { id: wager.id },
-        data: {
-          status: 'SETTLED',
-          winnerId: winnerUserId,
-        },
-        include: { participants: { include: { user: true } }, creator: true },
-      });
-
-      return settled;
-    });
-
-    try {
-      const pot = Number(wager.totalPot);
-      const fee = pot * FEE_RATE;
-      const payout = pot - fee;
-
-      const winnerParticipant = settled.participants.find((p: any) => p.userId === winnerUserId);
-      const winnerName = winnerParticipant?.user.displayName || winnerParticipant?.user.email.split('@')[0] || 'Winner';
-
-      for (const p of settled.participants) {
-        const isWinner = p.userId === winnerUserId;
-        const msg = isWinner 
-          ? `Congratulations! You won the wager: "${wager.description.slice(0, 40)}${wager.description.length > 40 ? '...' : ''}" and received payout of ₦${payout.toLocaleString()} (after 2.5% fee).`
-          : `Wager settled: "${wager.description.slice(0, 40)}${wager.description.length > 40 ? '...' : ''}". Winner: ${winnerName}.`;
-
-        await this.notificationsService.createNotification(
-          p.userId,
-          'SETTLEMENT',
-          msg
-        );
-      }
-    } catch (err) {
-      console.error('Failed to send settlement notifications:', err);
-    }
-
-    return settled;
-  }
 }

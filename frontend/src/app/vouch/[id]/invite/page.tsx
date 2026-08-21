@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
+import { formatStake } from "@/lib/web3/format";
 import { ArrowLeft, Copy, CheckCircle2, Share2, Clock, Shield } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
@@ -98,7 +99,7 @@ export default function InvitePage() {
               <div className="grid grid-cols-2 gap-4 pt-4 border-t border-[var(--border)]">
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Your Stake</p>
-                  <p className="font-bold text-xl mt-1">₦{Number(wager.totalPot).toLocaleString()}</p>
+                  <p className="font-bold text-xl mt-1">{formatStake(wager.totalPot, wager)}</p>
                 </div>
                 <div>
                   <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Status</p>
