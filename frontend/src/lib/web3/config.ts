@@ -23,7 +23,7 @@ export const wagmiConfig = createConfig({
     // the low-friction path for people who have never used crypto.
     coinbaseWallet({
       appName: "Vouchit",
-      preference: "smartWalletOnly",
+      preference: { options: "smartWalletOnly" },
     }),
     // Fall back to an existing browser wallet for users who already have one.
     injected({ shimDisconnect: true }),
