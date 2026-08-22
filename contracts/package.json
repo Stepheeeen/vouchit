@@ -7,6 +7,8 @@
     "test": "hardhat test",
     "node": "hardhat node",
     "e2e": "hardhat run script/e2e.ts --network localhost",
+    "abi-compat": "hardhat run script/abi-compat.ts --network localhost",
+    "verify:all": "npm run test && npm run e2e && npm run abi-compat",
     "deploy:sepolia": "hardhat run script/deploy.ts --network baseSepolia",
     "deploy:mainnet": "hardhat run script/deploy.ts --network base"
   },
