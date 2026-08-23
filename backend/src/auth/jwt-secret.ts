@@ -16,13 +16,17 @@ export function getJwtSecret(): string {
   const secret = process.env.JWT_SECRET;
 
   if (!secret) {
-    if (process.env.NODE_ENV === 'production') {
-      throw new Error(
-        'JWT_SECRET is not set. Refusing to start with a default signing key — ' +
-          'anyone could forge authentication tokens.',
-      );
+    // Allow the default only where it is unambiguously a local run. Keying off
+    // `!== 'production'` would hand the default to any deploy that simply forgot
+    // to set NODE_ENV, which is exactly when it matters most.
+    const env = process.env.NODE_ENV;
+    if (env === 'development' || env === 'test') {
+      return DEV_SECRET;
     }
-    return DEV_SECRET;
+    throw new Error(
+      'JWT_SECRET is not set. Refusing to start with a default signing key — ' +
+        'anyone could forge authentication tokens for any account.',
+    );
   }
 
   return secret;

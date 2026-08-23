@@ -3,3 +3,6 @@ node_modules
 .env
 
 /generated/prisma
+
+# Next.js build artifacts (created if a build is run from this directory)
+.next/
