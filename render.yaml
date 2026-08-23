@@ -17,3 +17,30 @@ services:
         sync: false # Set manually
       - key: FRONTEND_URL
         sync: false # Set manually after deploying frontend
+      - key: RESEND_FROM_EMAIL
+        sync: false # Set manually
+
+      # ── Web3 ──────────────────────────────────────────────────────────────
+      # 84532 = Base Sepolia, 8453 = Base mainnet. Both apps default to Sepolia
+      # when unset, so a missed variable fails safe instead of touching real
+      # funds.
+      - key: WEB3_CHAIN_ID
+        value: "84532"
+      - key: WEB3_RPC_URL
+        value: https://sepolia.base.org
+      # Deployed VouchitEscrow. Until set, on-chain wagers are rejected rather
+      # than silently accepted.
+      - key: VOUCHIT_ESCROW_CONTRACT_ADDRESS
+        sync: false
+      # Contract owner — the ONLY address that can resolve disputes. Anyone
+      # holding it can settle any dispute in their own favour. Never commit it;
+      # set it in the dashboard only.
+      - key: ADMIN_RELAYER_PRIVATE_KEY
+        sync: false
+      # Receives the 2.5% protocol fee. No private key needed here.
+      - key: TREASURY_ADDRESS
+        sync: false
+      # Without this, wallet-age checks return nothing and every account stays
+      # at tier 0.
+      - key: BASESCAN_API_KEY
+        sync: false
