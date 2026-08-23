@@ -2,6 +2,7 @@ import { Injectable, UnauthorizedException, BadRequestException } from '@nestjs/
 import { JwtService } from '@nestjs/jwt';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
+import { stripUserSecrets } from '../common/user-select';
 import { Resend } from 'resend';
 
 @Injectable()
@@ -70,7 +71,13 @@ export class AuthService {
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) throw new UnauthorizedException('User not found');
 
-    if (user.otp !== otp || !user.otpExpiresAt || user.otpExpiresAt < new Date()) {
+    // An OTP is single-use: once the address is verified this endpoint must not
+    // mint another session, or a leaked code stays a login forever.
+    if (user.emailVerified) {
+      throw new UnauthorizedException('This email is already verified. Please log in.');
+    }
+
+    if (!user.otp || user.otp !== otp || !user.otpExpiresAt || user.otpExpiresAt < new Date()) {
       throw new UnauthorizedException('Invalid or expired OTP');
     }
 
@@ -84,7 +91,7 @@ export class AuthService {
 
     return {
       accessToken: token,
-      user,
+      user: stripUserSecrets(user),
     };
   }
 
@@ -102,7 +109,7 @@ export class AuthService {
 
     return {
       accessToken: token,
-      user,
+      user: stripUserSecrets(user),
     };
   }
 }

@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
+import { getTokens } from './tokens';
 
 /**
  * Tiering for a non-custodial app.
@@ -149,13 +150,27 @@ export class VerificationService {
     return { tier: VerificationTier.NEWCOMER, method: null, signals };
   }
 
-  /** Recompute, persist, and return the user's tier. */
+  /**
+   * Recompute, persist, and return the user's tier.
+   *
+   * `stakeCaps` is included so clients can enforce the ceiling BEFORE the user
+   * pays gas. A server-side rejection after an on-chain stake would strand
+   * their funds in escrow with no record in the app, so the limit has to be
+   * knowable up front rather than discovered on failure.
+   */
   async refreshTier(userId: string) {
     const result = await this.computeTier(userId);
     await this.prisma.user.update({
       where: { id: userId },
       data: { verificationTier: result.tier, verificationMethod: result.method },
     });
-    return { ...result, limits: TIER_LIMITS[result.tier] };
+
+    const stakeCaps: Record<string, string | null> = {};
+    for (const token of getTokens()) {
+      const cap = token.tierMaxStake[result.tier] ?? null;
+      stakeCaps[token.symbol] = cap === null ? null : cap.toString();
+    }
+
+    return { ...result, limits: TIER_LIMITS[result.tier], stakeCaps };
   }
 }

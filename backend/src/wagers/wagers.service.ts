@@ -4,6 +4,7 @@ import { NotificationsService } from '../notifications/notifications.service';
 import { Web3Service } from '../web3/web3.service';
 import { findToken, parseTokenAmount, NATIVE_TOKEN_ADDRESS as ZERO_ADDRESS } from '../web3/tokens';
 import { OnChainWagerStatus } from '../web3/escrow.abi';
+import { PUBLIC_USER_SELECT } from '../common/user-select';
 import { VerificationService, TIER_LIMITS } from '../web3/verification.service';
 import { formatTokenAmount } from '../web3/tokens';
 
@@ -114,8 +115,14 @@ export class WagersService {
       );
     }
 
-    const days = expiryDays && [1, 3, 7, 30].includes(expiryDays) ? expiryDays : 1;
-    const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    // The chain is the source of truth for expiry, exactly as it is for stake
+    // and status. Deriving it from client input instead let a creator advertise
+    // a 30-day wager backed by a 60-second escrow, then reclaim the stake via
+    // cancelExpiredWager while the listing still showed it as joinable.
+    const expiresAt = new Date(onChain.expiresAt * 1000);
+    if (expiresAt.getTime() <= Date.now()) {
+      throw new BadRequestException('This escrow entry has already expired on-chain');
+    }
 
     const wager = await this.prisma.wager.create({
       data: {
@@ -140,7 +147,7 @@ export class WagersService {
           },
         },
       },
-      include: { participants: true, creator: true },
+      include: { participants: true, creator: { select: PUBLIC_USER_SELECT } },
     });
 
     try {
@@ -160,7 +167,10 @@ export class WagersService {
     await this.checkAndProcessExpiredWagers();
     return this.prisma.wager.findMany({
       where: { status: { in: ['PENDING_FUNDING', 'ACTIVE'] } },
-      include: { creator: true, participants: { include: { user: true } } },
+      include: {
+        creator: { select: PUBLIC_USER_SELECT },
+        participants: { include: { user: { select: PUBLIC_USER_SELECT } } },
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -170,8 +180,8 @@ export class WagersService {
     const wager = await this.prisma.wager.findUnique({
       where: { id },
       include: {
-        creator: true,
-        participants: { include: { user: true } },
+        creator: { select: PUBLIC_USER_SELECT },
+        participants: { include: { user: { select: PUBLIC_USER_SELECT } } },
         dispute: true,
       },
     });
@@ -189,8 +199,8 @@ export class WagersService {
         ],
       },
       include: {
-        creator: true,
-        participants: { include: { user: true } },
+        creator: { select: PUBLIC_USER_SELECT },
+        participants: { include: { user: { select: PUBLIC_USER_SELECT } } },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -219,6 +229,34 @@ export class WagersService {
 
     const onChain = await this.web3Service.verifyOnChainJoin(userId, wager.contractWagerId);
 
+    // The same tier limits that bound wager creation must bound joining. Without
+    // this a brand-new account could take unlimited exposure simply by joining
+    // wagers created by someone else, which is half of every wager.
+    const token = findToken(onChain.token);
+    if (!token) {
+      throw new BadRequestException('This wager uses an unsupported stake currency');
+    }
+
+    const { tier, limits } = await this.verificationService.refreshTier(userId);
+    const maxStake = token.tierMaxStake[tier] ?? null;
+    if (maxStake !== null && onChain.stakeAmount > maxStake) {
+      throw new BadRequestException(
+        `Your current tier allows stakes up to ${formatTokenAmount(maxStake, token.decimals)} ${token.symbol}. Verify your wallet to raise this limit.`,
+      );
+    }
+
+    const openWagers = await this.prisma.wager.count({
+      where: {
+        participants: { some: { userId } },
+        status: { in: ['PENDING_FUNDING', 'ACTIVE', 'DISPUTED'] },
+      },
+    });
+    if (openWagers >= limits.maxConcurrentWagers) {
+      throw new BadRequestException(
+        `Your current tier allows ${limits.maxConcurrentWagers} open wagers at a time. Settle one before joining another.`,
+      );
+    }
+
     await this.prisma.wagerParticipant.create({
       data: {
         wagerId,
@@ -236,13 +274,21 @@ export class WagersService {
         totalPot: onChain.totalPot.toString(),
         status: 'ACTIVE',
       },
-      include: { participants: { include: { user: true } }, creator: true },
+      include: {
+        participants: { include: { user: { select: PUBLIC_USER_SELECT } } },
+        creator: { select: PUBLIC_USER_SELECT },
+      },
     });
 
     try {
-      const challengerUser = await this.prisma.user.findUnique({ where: { id: userId } });
-      const challengerName = challengerUser?.displayName || challengerUser?.email.split('@')[0] || 'An opponent';
-      const creatorName = wager.creator.displayName || wager.creator.email.split('@')[0] || 'Creator';
+      // Deliberately no email fallback: the local-part of an address is PII and
+      // these strings are shown to the counterparty.
+      const challengerUser = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { displayName: true },
+      });
+      const challengerName = challengerUser?.displayName || 'An opponent';
+      const creatorName = wager.creator.displayName || 'The creator';
 
       await this.notificationsService.createNotification(
         wager.creatorId,
@@ -317,8 +363,7 @@ export class WagersService {
         });
 
         try {
-          const winnerName =
-            winner.user?.displayName || winner.user?.email.split('@')[0] || 'The winner';
+          const winnerName = winner.user?.displayName || 'The winner';
           for (const p of wager.participants) {
             const msg =
               p.userId === winner.userId

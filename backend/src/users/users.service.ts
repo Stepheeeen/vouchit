@@ -1,6 +1,7 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import * as bcrypt from 'bcrypt';
+import { PUBLIC_USER_SELECT, stripUserSecrets } from '../common/user-select';
 
 @Injectable()
 export class UsersService {
@@ -60,7 +61,8 @@ export class UsersService {
         ...(data.avatarUrl !== undefined && { avatarUrl: data.avatarUrl }),
       },
     });
-    return updated;
+    // Never hand back the bcrypt hash or a live OTP, even to the account owner.
+    return stripUserSecrets(updated);
   }
 
   async changePassword(id: string, currentPassword: string, newPassword: string) {
@@ -80,7 +82,7 @@ export class UsersService {
     const settledWagers = await this.prisma.wager.findMany({
       where: { status: 'SETTLED', winnerId: { not: null } },
       include: {
-        participants: { include: { user: true } },
+        participants: { include: { user: { select: PUBLIC_USER_SELECT } } },
       },
     });
 
@@ -120,8 +122,10 @@ export class UsersService {
     const leaders = Array.from(statsMap.values())
       .map((s) => ({
         id: s.user.id,
-        name: s.user.displayName || s.user.email.split('@')[0],
-        email: s.user.email,
+        // The leaderboard is unauthenticated. It must expose no email — neither
+        // as a field nor as a display-name fallback.
+        name: s.user.displayName || 'Anonymous',
+        avatarUrl: s.user.avatarUrl,
         wins: s.wins,
         losses: s.losses,
         total: s.wins + s.losses,

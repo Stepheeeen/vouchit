@@ -70,9 +70,13 @@ export function getChainId(): number {
   return Number.isFinite(configured) && configured > 0 ? configured : BASE_SEPOLIA;
 }
 
+/** Every supported stake token on the configured chain. */
+export function getTokens(): StakeToken[] {
+  return TOKENS_BY_CHAIN[getChainId()] ?? [];
+}
+
 export function findToken(address: string): StakeToken | undefined {
-  const tokens = TOKENS_BY_CHAIN[getChainId()] ?? [];
-  return tokens.find((t) => t.address === address?.toLowerCase());
+  return getTokens().find((t) => t.address === address?.toLowerCase());
 }
 
 /**

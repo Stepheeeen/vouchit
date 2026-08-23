@@ -92,7 +92,14 @@ export class Web3Service {
     userId: string,
     contractWagerId: string,
     expectedStake?: bigint,
-  ): Promise<{ creator: string; stakeAmount: bigint; token: string; status: number; challenger: string }> {
+  ): Promise<{
+    creator: string;
+    stakeAmount: bigint;
+    token: string;
+    status: number;
+    challenger: string;
+    expiresAt: number;
+  }> {
     if (!/^0x[0-9a-fA-F]{64}$/.test(contractWagerId ?? '')) {
       throw new BadRequestException('contractWagerId must be a 32-byte hex string');
     }
@@ -139,7 +146,14 @@ export class Web3Service {
       throw new BadRequestException('On-chain stake does not match the submitted amount');
     }
 
-    return { creator, stakeAmount, token: onChain.token, status, challenger: String(onChain.challenger) };
+    return {
+      creator,
+      stakeAmount,
+      token: onChain.token,
+      status,
+      challenger: String(onChain.challenger),
+      expiresAt: Number(onChain.expiresAt),
+    };
   }
 
   /** Raw read of an escrow entry. Callers decide what the state means. */
@@ -207,6 +221,7 @@ export class Web3Service {
       challenger: String(onChain.challenger),
       stakeAmount: onChain.stakeAmount as bigint,
       totalPot: onChain.totalPot as bigint,
+      token: String(onChain.token),
     };
   }
 

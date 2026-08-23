@@ -2,6 +2,7 @@ import { Injectable, NotFoundException, BadRequestException } from '@nestjs/comm
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Web3Service } from '../web3/web3.service';
+import { ADMIN_USER_SELECT } from '../common/user-select';
 
 @Injectable()
 export class DisputesService {
@@ -73,8 +74,13 @@ export class DisputesService {
     const dispute = await this.prisma.dispute.findUnique({
       where: { wagerId },
       include: {
-        evidence: { include: { user: true } },
-        wager: { include: { creator: true, participants: { include: { user: true } } } },
+        evidence: { include: { user: { select: ADMIN_USER_SELECT } } },
+        wager: {
+          include: {
+            creator: { select: ADMIN_USER_SELECT },
+            participants: { include: { user: { select: ADMIN_USER_SELECT } } },
+          },
+        },
       },
     });
     if (!dispute) throw new NotFoundException('No dispute found for this wager');
@@ -84,8 +90,13 @@ export class DisputesService {
   async getAllDisputes() {
     return this.prisma.dispute.findMany({
       include: {
-        evidence: { include: { user: true } },
-        wager: { include: { creator: true, participants: { include: { user: true } } } },
+        evidence: { include: { user: { select: ADMIN_USER_SELECT } } },
+        wager: {
+          include: {
+            creator: { select: ADMIN_USER_SELECT },
+            participants: { include: { user: { select: ADMIN_USER_SELECT } } },
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -100,7 +111,7 @@ export class DisputesService {
       include: {
         wager: {
           include: {
-            participants: { include: { user: true } },
+            participants: { include: { user: { select: ADMIN_USER_SELECT } } },
           },
         },
       },
@@ -200,7 +211,7 @@ export class DisputesService {
 
     try {
       const winnerName =
-        winnerParticipant.user?.displayName || winnerParticipant.user?.email.split('@')[0] || 'Winner';
+        winnerParticipant.user?.displayName || 'The winner';
       for (const p of wager.participants) {
         const msg =
           p.userId === winnerUserId

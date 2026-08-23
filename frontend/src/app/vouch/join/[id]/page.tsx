@@ -26,17 +26,23 @@ export default function JoinVouchPage() {
   const [joined, setJoined] = useState(false);
   const [error, setError] = useState("");
   const [currentUserId, setCurrentUserId] = useState<string | null>(null);
+  const [verification, setVerification] = useState<any>(null);
 
   useEffect(() => {
     const load = async () => {
       try {
-        const { wagersApi, userApi } = await import("@/lib/api");
-        const [wagerData, profileData] = await Promise.all([
+        const { wagersApi, userApi, web3Api } = await import("@/lib/api");
+        const [wagerData, profileData, verificationData] = await Promise.all([
           wagersApi.getById(id),
           userApi.getProfile().catch(() => null),
+          // Fetched up front so the stake cap is enforced BEFORE the user pays
+          // gas — a backend rejection after the on-chain join would strand
+          // their funds in escrow with no record in the app.
+          web3Api.getVerification().catch(() => null),
         ]);
         setWager(wagerData);
         setCurrentUserId(profileData?.id || null);
+        setVerification(verificationData);
       } catch {
         setError("Could not load wager. It may not exist or have expired.");
       } finally {
@@ -53,8 +59,38 @@ export default function JoinVouchPage() {
   // The stake is fixed by the escrow entry — a challenger always matches it.
   const requiredStake: string | undefined = wager?.onChainStake;
   const token = wager ? findToken(ACTIVE_CHAIN.id, wager.tokenAddress ?? "") : undefined;
+  /**
+   * Stake ceiling for this user's tier, or null when uncapped. Served by the
+   * API so the limits live in one place rather than being duplicated here.
+   */
+  const tierMaxStake: bigint | null = (() => {
+    const cap = token && verification?.stakeCaps?.[token.symbol];
+    if (!cap) return null;
+    try {
+      return BigInt(cap);
+    } catch {
+      return null;
+    }
+  })();
+
+  const exceedsTierCap = (() => {
+    if (tierMaxStake === null || !requiredStake) return false;
+    try {
+      return BigInt(requiredStake) > tierMaxStake;
+    } catch {
+      return false;
+    }
+  })();
+
   const canJoin =
-    !!requiredStake && !!token && isConnected && isCorrectChain && !isAlreadyParticipant && !isFull && !isNotAvailable;
+    !!requiredStake &&
+    !!token &&
+    isConnected &&
+    isCorrectChain &&
+    !exceedsTierCap &&
+    !isAlreadyParticipant &&
+    !isFull &&
+    !isNotAvailable;
 
   const handleJoin = async () => {
     if (!canJoin || isJoining) return;
@@ -214,6 +250,12 @@ export default function JoinVouchPage() {
             ) : !isCorrectChain ? (
               <p className="text-xs text-[var(--danger)] font-semibold">
                 Switch your wallet to {ACTIVE_CHAIN.name} to join this wager.
+              </p>
+            ) : exceedsTierCap ? (
+              <p className="text-xs text-[var(--danger)] font-semibold">
+                This stake is above your current limit of{" "}
+                {formatStake(tierMaxStake?.toString(), wager)}. Verify your wallet to raise it —
+                don&apos;t send the transaction, it can&apos;t be accepted.
               </p>
             ) : (
               <p className="text-xs text-[var(--success)] font-semibold">
