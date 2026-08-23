@@ -22,6 +22,12 @@ export class UsersService {
    * GET /users/:id, which anybody can call.
    */
   async findPublicById(id: string) {
+    // Mongo ObjectIds are 24 hex chars. Passing anything else to Prisma throws a
+    // raw client error and surfaces as a 500; this is a not-found, not a crash.
+    if (!/^[0-9a-fA-F]{24}$/.test(id ?? '')) {
+      throw new NotFoundException('User not found');
+    }
+
     const user = await this.prisma.user.findUnique({
       where: { id },
       select: {
