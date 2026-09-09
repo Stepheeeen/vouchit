@@ -25,6 +25,13 @@ export interface StakeToken {
 
 const BASE_MAINNET = 8453;
 const BASE_SEPOLIA = 84532;
+/**
+ * Hardhat's default chain id, used by the local end-to-end suite. Only reachable
+ * when WEB3_CHAIN_ID is set to it explicitly; the default is Base Sepolia, so a
+ * real deploy can never land here by accident. Native ETH only — a local mock
+ * ERC20 has a fresh address on every run, so it cannot be listed statically.
+ */
+const LOCAL_CHAIN = 31337;
 
 const TOKENS_BY_CHAIN: Record<number, StakeToken[]> = {
   [BASE_MAINNET]: [
@@ -42,6 +49,15 @@ const TOKENS_BY_CHAIN: Record<number, StakeToken[]> = {
       decimals: 18,
       minStake: 200_000_000_000_000n,
       // 0.01 / 0.1 / uncapped ETH
+      tierMaxStake: [10_000_000_000_000_000n, 100_000_000_000_000_000n, null],
+    },
+  ],
+  [LOCAL_CHAIN]: [
+    {
+      address: NATIVE_TOKEN_ADDRESS,
+      symbol: 'ETH',
+      decimals: 18,
+      minStake: 1_000_000_000_000_000n, // 0.001 ETH
       tierMaxStake: [10_000_000_000_000_000n, 100_000_000_000_000_000n, null],
     },
   ],
