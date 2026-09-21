@@ -97,6 +97,16 @@ export class WagersService {
       );
     }
 
+    // One escrow entry backs exactly one wager. This must be checked here, not
+    // left to `contractWagerId @unique`: on MongoDB that index only exists after
+    // `prisma db push`, which the deploy never runs — and running it would build
+    // a unique index on the optional web3Address too, where every user without a
+    // linked wallet counts as a duplicate null and signups start failing.
+    const alreadyRegistered = await this.prisma.wager.findUnique({ where: { contractWagerId } });
+    if (alreadyRegistered) {
+      throw new BadRequestException('This escrow entry is already registered as a wager');
+    }
+
     // Stakes live in the escrow contract, never in our ledger, so the id must be
     // proven against the chain before the wager exists here. verifyOnChainWager
     // checks the escrow entry exists, was created by this user's linked wallet,

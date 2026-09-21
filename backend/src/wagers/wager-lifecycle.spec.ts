@@ -236,6 +236,30 @@ describe('wager lifecycle (API + escrow + database)', () => {
     expect(stored!.winnerId).toBe(users[1].id);
   });
 
+  it('refuses to register the same escrow entry twice', async () => {
+    const wagerId = hexlify(randomBytes(32));
+    await (
+      await (chain.escrow.connect(chain.wallets[2]) as any).createWager(
+        wagerId, chain.wallets[3].address, ZeroAddress, STAKE, ONE_DAY, { value: STAKE },
+      )
+    ).wait();
+
+    const body = {
+      description: 'One escrowed stake, registered as two separate wagers',
+      stake: '0.005',
+      tokenAddress: ZeroAddress,
+      contractWagerId: wagerId,
+    };
+    const first = await request(server)
+      .post('/wagers').set('Authorization', `Bearer ${users[0].token}`).send(body);
+    expectStatus(first, 201);
+
+    const second = await request(server)
+      .post('/wagers').set('Authorization', `Bearer ${users[0].token}`).send(body);
+    expect(second.status).toBe(400);
+    expect(await prisma.wager.count({ where: { contractWagerId: wagerId } })).toBe(1);
+  });
+
   it('enforces the tier-0 stake ceiling before the wager is recorded', async () => {
     const overCap = parseEther('0.05'); // above the 0.01 ETH tier-0 cap
     const wagerId = hexlify(randomBytes(32));
