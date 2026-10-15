@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { getTokens } from './tokens';
+import { getTokens, getChainId } from './tokens';
 
 /**
  * Tiering for a non-custodial app.
@@ -51,19 +51,46 @@ export class VerificationService {
    */
   private async getWalletAgeDays(address: string): Promise<number | null> {
     const apiKey = process.env.BASESCAN_API_KEY;
-    const apiUrl = process.env.BASESCAN_API_URL ?? 'https://api.basescan.org/api';
     if (!apiKey) return null;
 
+    // Etherscan's V2 unified endpoint, selected by chain id. The old per-chain
+    // V1 host (api.basescan.org) is deprecated and now answers every request
+    // with NOTOK, so the previous default could never have returned an age.
+    //
+    // Note on plans: chain 84532 (Base Sepolia) is served on the free tier, but
+    // 8453 (Base mainnet) returns "Free API access is not supported for this
+    // chain" — on mainnet this signal needs a paid Etherscan plan, and without
+    // one it stays unavailable rather than wrong.
+    const apiUrl = process.env.BASESCAN_API_URL ?? 'https://api.etherscan.io/v2/api';
+    const chainId = getChainId();
+
     try {
-      const url = `${apiUrl}?module=account&action=txlist&address=${address}&startblock=0&endblock=99999999&page=1&offset=1&sort=asc&apikey=${apiKey}`;
+      const url =
+        `${apiUrl}?chainid=${chainId}&module=account&action=txlist&address=${address}` +
+        `&startblock=0&endblock=99999999&page=1&offset=1&sort=asc&apikey=${apiKey}`;
       const res = await fetch(url);
       if (!res.ok) return null;
-      const body: any = await res.json();
-      const firstTx = Array.isArray(body?.result) ? body.result[0] : null;
-      if (!firstTx?.timeStamp) return null;
 
-      const firstSeen = Number(firstTx.timeStamp) * 1000;
-      return Math.floor((Date.now() - firstSeen) / (24 * 60 * 60 * 1000));
+      const body: any = await res.json();
+
+      if (body?.status === '1' && Array.isArray(body.result) && body.result[0]?.timeStamp) {
+        const firstSeen = Number(body.result[0].timeStamp) * 1000;
+        return Math.floor((Date.now() - firstSeen) / (24 * 60 * 60 * 1000));
+      }
+
+      // A wallet with no history is a real answer — age zero — not a failed
+      // lookup. The explorer signals it as status "0" with this message and an
+      // empty result array, so the marker is on `message`, not `result`.
+      // Anything else (missing plan, bad key, rate limit) is genuinely unknown
+      // and must not read as either a brand-new wallet or an old one.
+      if (/no transactions found/i.test(String(body?.message ?? ''))) {
+        return 0;
+      }
+
+      console.error(
+        `[VerificationService] Wallet age unavailable for chain ${chainId}: ${body?.result ?? body?.message}`,
+      );
+      return null;
     } catch (error) {
       console.error('[VerificationService] Wallet age lookup failed:', error);
       return null;

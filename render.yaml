@@ -41,6 +41,7 @@ services:
       - key: TREASURY_ADDRESS
         sync: false
       # Without this, wallet-age checks return nothing and every account stays
-      # at tier 0.
+      # at tier 0. Note the free Etherscan tier does not cover Base mainnet
+      # (8453) — only Base Sepolia (84532). Mainnet needs a paid plan.
       - key: BASESCAN_API_KEY
         sync: false
