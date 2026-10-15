@@ -11,7 +11,9 @@
     "verify:all": "npm run test && npm run e2e && npm run abi-compat",
     "deploy:sepolia": "hardhat run script/deploy.ts --network baseSepolia",
     "deploy:mainnet": "hardhat run script/deploy.ts --network base",
-    "fund:testers": "hardhat run script/fund-testers.ts --network baseSepolia"
+    "fund:testers": "hardhat run script/fund-testers.ts --network baseSepolia",
+    "preflight:sepolia": "hardhat run script/preflight.ts --network baseSepolia",
+    "preflight:mainnet": "hardhat run script/preflight.ts --network base"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",

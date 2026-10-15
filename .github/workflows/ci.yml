@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main, web3-production]
+  pull_request:
+
+jobs:
+  contracts:
+    name: Contracts
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: contracts
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npx hardhat compile
+      - name: Unit tests
+        run: npx hardhat test
+      # Both of these run against Hardhat's in-process network, so no separate
+      # node and no RPC credentials are needed.
+      - name: Lifecycle end-to-end
+        run: npx hardhat run script/e2e.ts
+      - name: ABI compatibility with backend and frontend
+        run: npx hardhat run script/abi-compat.ts
+
+  backend:
+    name: Backend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: backend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npx prisma generate
+      - name: Typecheck
+        run: npx tsc --noEmit
+      # The integration suites (wager-lifecycle, auth-responses) are excluded:
+      # they need a MongoDB replica set and a local chain. Run them locally with
+      # `npm run test:integration`.
+      - name: Unit tests
+        run: npx jest --testPathIgnorePatterns "wager-lifecycle|auth-responses" --forceExit
+        env:
+          NODE_ENV: test
+
+  frontend:
+    name: Frontend
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - name: Typecheck
+        run: npx tsc --noEmit
+      - name: Build
+        run: npx next build --webpack
+        env:
+          # Build-time placeholders; the real values come from Vercel.
+          NEXT_PUBLIC_API_URL: http://localhost:4000
+          NEXT_PUBLIC_CHAIN: baseSepolia
