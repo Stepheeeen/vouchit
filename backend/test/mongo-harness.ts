@@ -16,12 +16,20 @@ import { MongoClient } from 'mongodb';
 
 const REPL_SET = 'vouchittest';
 
-/** Locate a mongod binary: PATH, or the cache mongodb-memory-server downloaded. */
+/**
+ * Locate a mongod binary from wherever mongodb-memory-server cached it, falling
+ * back to PATH. It has used both of these locations across versions, so check
+ * both rather than assuming one.
+ */
 function findMongod(): string {
-  const cacheDir = join(homedir(), '.cache', 'mongodb-binaries');
-  if (existsSync(cacheDir)) {
-    const binary = readdirSync(cacheDir).find((f) => f.startsWith('mongod'));
-    if (binary) return join(cacheDir, binary);
+  const candidates = [
+    join(__dirname, '..', 'node_modules', '.cache', 'mongodb-memory-server'),
+    join(homedir(), '.cache', 'mongodb-binaries'),
+  ];
+  for (const dir of candidates) {
+    if (!existsSync(dir)) continue;
+    const binary = readdirSync(dir).find((f) => f.startsWith('mongod'));
+    if (binary) return join(dir, binary);
   }
   return 'mongod';
 }
