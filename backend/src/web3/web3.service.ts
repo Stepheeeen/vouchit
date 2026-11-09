@@ -1,6 +1,6 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { verifyMessage, JsonRpcProvider, Contract, isAddress } from 'ethers';
+import { verifyMessage, JsonRpcProvider, Contract, Wallet, isAddress } from 'ethers';
 import { VOUCHIT_ESCROW_ABI, OnChainWagerStatus } from './escrow.abi';
 
 @Injectable()
@@ -257,7 +257,11 @@ export class Web3Service {
     }
 
     try {
-      const { JsonRpcProvider, Wallet, Contract } = await import('ethers');
+      // ethers is imported statically at the top of this file. A dynamic
+      // import here shadowed those bindings for no benefit and threw
+      // "A dynamic import callback was invoked without --experimental-vm-modules",
+      // which made the relayer path — the only one where we sign on a user's
+      // behalf — impossible to exercise in tests.
       const provider = new JsonRpcProvider(rpcUrl);
       const relayerWallet = new Wallet(adminPrivateKey, provider);
 

@@ -15,7 +15,7 @@ import { hexlify, randomBytes, parseEther, ZeroAddress, Contract } from 'ethers'
 import { AppModule } from '../app.module';
 import { PrismaClient } from '@prisma/client';
 import { startMongo, type MongoHarness } from '../../test/mongo-harness';
-import { startChain, type ChainHarness } from '../../test/chain-harness';
+import { startChain, HARDHAT_KEYS, type ChainHarness } from '../../test/chain-harness';
 
 jest.setTimeout(180_000);
 
@@ -75,6 +75,12 @@ describe('wager lifecycle (API + escrow + database)', () => {
     process.env.WEB3_CHAIN_ID = String(chain.chainId);
     process.env.WEB3_RPC_URL = chain.rpcUrl;
     process.env.VOUCHIT_ESCROW_CONTRACT_ADDRESS = chain.escrowAddress;
+    // The escrow on this chain is owned by hardhat account #0, and only its
+    // owner may resolve a dispute. Without this the service would fall back to
+    // whatever ADMIN_RELAYER_PRIVATE_KEY sits in backend/.env — a key for a
+    // different network entirely — and the contract would rightly refuse it.
+    process.env.ADMIN_RELAYER_PRIVATE_KEY = HARDHAT_KEYS[0];
+    process.env.TREASURY_ADDRESS = chain.wallets[1].address;
 
     prisma = new PrismaClient();
 
@@ -87,6 +93,7 @@ describe('wager lifecycle (API + escrow + database)', () => {
 
     await createUser(2); // alice
     await createUser(3); // bob
+    await createUser(4); // admin — deliberately not a participant
   });
 
   afterAll(async () => {
@@ -258,6 +265,105 @@ describe('wager lifecycle (API + escrow + database)', () => {
       .post('/wagers').set('Authorization', `Bearer ${users[0].token}`).send(body);
     expect(second.status).toBe(400);
     expect(await prisma.wager.count({ where: { contractWagerId: wagerId } })).toBe(1);
+  });
+
+  it('resolves a dispute through the API and moves the money on-chain', async () => {
+    // The one path where the backend itself signs a transaction. Everything
+    // else is the users' own wallets acting; here the relayer key moves funds
+    // on their behalf, so it has to be proven against a real chain.
+    const wagerId = hexlify(randomBytes(32));
+    const alice = chain.wallets[2];
+    const bob = chain.wallets[3];
+
+    await (
+      await (chain.escrow.connect(alice) as any).createWager(
+        wagerId, bob.address, ZeroAddress, STAKE, ONE_DAY, { value: STAKE },
+      )
+    ).wait();
+
+    const created = await request(server)
+      .post('/wagers')
+      .set('Authorization', `Bearer ${users[0].token}`)
+      .send({
+        description: 'A claim the two of us will end up disagreeing about',
+        stake: '0.005',
+        tokenAddress: ZeroAddress,
+        contractWagerId: wagerId,
+      });
+    expectStatus(created, 201);
+    const dbWagerId: string = created.body.id;
+
+    await (await (chain.escrow.connect(bob) as any).joinWager(wagerId, { value: STAKE })).wait();
+    const joined = await request(server)
+      .post(`/wagers/${dbWagerId}/join`)
+      .set('Authorization', `Bearer ${users[1].token}`)
+      .send({});
+    expectStatus(joined, 201);
+
+    // Each names themselves: the contract leaves it ACTIVE rather than settling.
+    await (await (chain.escrow.connect(alice) as any).voteWinner(wagerId, alice.address)).wait();
+    await (await (chain.escrow.connect(bob) as any).voteWinner(wagerId, bob.address)).wait();
+
+    const conflict = await request(server)
+      .post(`/wagers/${dbWagerId}/settle`)
+      .set('Authorization', `Bearer ${users[0].token}`)
+      .send({});
+    expectStatus(conflict, 201);
+    expect(conflict.body.status).toBe('CONFLICT');
+
+    // Alice opens the dispute on-chain, then files it with the API.
+    await (await (chain.escrow.connect(alice) as any).openDispute(wagerId)).wait();
+    const filed = await request(server)
+      .post('/disputes')
+      .set('Authorization', `Bearer ${users[0].token}`)
+      .send({ wagerId: dbWagerId, reason: 'The match was abandoned at half time' });
+    expectStatus(filed, 201);
+    const disputeId: string = filed.body.id ?? filed.body.dispute?.id;
+
+    // Only an admin may resolve. A participant must not be able to.
+    const asParticipant = await request(server)
+      .post(`/disputes/${disputeId}/resolve`)
+      .set('Authorization', `Bearer ${users[0].token}`)
+      .send({ resolution: 'WINNER_A' });
+    expect(asParticipant.status).toBe(403);
+
+    // Promote a separate account to admin rather than granting it to a party.
+    await prisma.user.update({ where: { id: users[2].id }, data: { role: 'ADMIN' } });
+    const adminLogin = await request(server)
+      .post('/auth/login')
+      .send({ email: users[2].email, password: 'CorrectHorseBattery1!' });
+    expectStatus(adminLogin, 200);
+    const adminToken: string = adminLogin.body.accessToken;
+
+    const bobBefore = await chain.provider.getBalance(bob.address);
+    const treasuryBefore = await chain.provider.getBalance(chain.wallets[1].address);
+    const escrowBefore = await chain.provider.getBalance(chain.escrowAddress);
+
+    const resolved = await request(server)
+      .post(`/disputes/${disputeId}/resolve`)
+      .set('Authorization', `Bearer ${adminToken}`)
+      .send({ resolution: 'WINNER_B' }); // challenger: Bob
+    expectStatus(resolved, 201);
+
+    // A real transaction hash, not the mock relayer's placeholder.
+    expect(resolved.body.txHash).toMatch(/^0x[0-9a-fA-F]{64}$/);
+    expect(resolved.body.txHash).not.toMatch(/mock/i);
+
+    const pot = STAKE * 2n;
+    const fee = (pot * 250n) / 10_000n;
+
+    // Bob signed nothing here — the relayer moved it — so no gas to add back.
+    expect((await chain.provider.getBalance(bob.address)) - bobBefore).toBe(pot - fee);
+    expect((await chain.provider.getBalance(chain.wallets[1].address)) - treasuryBefore).toBe(fee);
+    expect(escrowBefore - (await chain.provider.getBalance(chain.escrowAddress))).toBe(pot);
+
+    const onChain = await chain.escrow.wagers(wagerId);
+    expect(Number(onChain.status)).toBe(2); // SETTLED
+    expect(String(onChain.winner)).toBe(bob.address);
+
+    const stored = await prisma.wager.findUnique({ where: { id: dbWagerId } });
+    expect(stored!.status).toBe('SETTLED');
+    expect(stored!.winnerId).toBe(users[1].id);
   });
 
   it('enforces the tier-0 stake ceiling before the wager is recorded', async () => {
