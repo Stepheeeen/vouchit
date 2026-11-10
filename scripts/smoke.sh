@@ -12,7 +12,8 @@
 #   ./scripts/smoke.sh
 #
 # Ports are deliberately offset from the defaults so a running dev environment
-# is left alone.
+# is left alone. SMOKE_WAIT caps how many seconds each service gets to come
+# up (default 300); raise it on a slow or loaded machine.
 
 set -uo pipefail
 
@@ -55,7 +56,10 @@ step "Local chain"
   > "$WORK/chain.log" 2>&1) &
 PIDS+=($!)
 
-for _ in $(seq 1 60); do
+# `hardhat node` was measured taking 140s to answer its first RPC call on a
+# loaded machine, so a 60s budget here reported a healthy chain as one that
+# "never started" — with an empty log, which makes it look like a crash.
+for _ in $(seq 1 ${SMOKE_WAIT:-300}); do
   curl -sf -X POST -H 'Content-Type: application/json' \
     --data '{"jsonrpc":"2.0","method":"eth_blockNumber","params":[],"id":1}' \
     "http://127.0.0.1:$CHAIN_PORT" >/dev/null 2>&1 && break
@@ -143,7 +147,7 @@ step "API"
   node dist/main.js > "$WORK/api.log" 2>&1) &
 PIDS+=($!)
 
-for _ in $(seq 1 60); do
+for _ in $(seq 1 ${SMOKE_WAIT:-300}); do
   curl -sf "http://127.0.0.1:$API_PORT/wagers" >/dev/null 2>&1 && break
   sleep 1
 done
@@ -217,7 +221,7 @@ step "Web"
   ./node_modules/.bin/next start -p $WEB_PORT > "$WORK/web.log" 2>&1) &
 PIDS+=($!)
 
-for _ in $(seq 1 90); do
+for _ in $(seq 1 ${SMOKE_WAIT:-300}); do
   curl -sf "http://127.0.0.1:$WEB_PORT/auth/login" >/dev/null 2>&1 && break
   sleep 1
 done
