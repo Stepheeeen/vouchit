@@ -37,8 +37,13 @@ const config: HardhatUserConfig = {
       accounts,
     },
   },
+  // Etherscan's V2 unified API takes ONE key for every chain and selects the
+  // chain itself. The old per-network map targets the deprecated V1 endpoints,
+  // which now reject every request — `hardhat verify` fails with
+  // "You are using a deprecated V1 endpoint". Same migration the backend's
+  // wallet-age lookup needed.
   etherscan: {
-    apiKey: { baseSepolia: process.env.BASESCAN_API_KEY || "", base: process.env.BASESCAN_API_KEY || "" },
+    apiKey: process.env.BASESCAN_API_KEY || "",
   },
 };
 

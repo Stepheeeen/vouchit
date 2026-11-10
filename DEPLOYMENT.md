@@ -9,6 +9,29 @@ relayer key and the contract itself.
 
 ---
 
+## 0. What is already deployed
+
+**Base mainnet (chain 8453) — live as of 2026-11-10.**
+
+| | |
+|---|---|
+| `VouchitEscrow` | [`0xc75633c19c5855A5DdBC2589ee509B7202CEFD14`](https://basescan.org/address/0xc75633c19c5855A5DdBC2589ee509B7202CEFD14#code) — source verified |
+| Owner / relayer | `0xbd1E5fD1e279A94791D96e4836E39fe08354f0F8` |
+| Treasury | `0x710F25Fd6CC08CefFEE734C0d2ae1bB64eB04324` |
+| Protocol fee | 250 bps (2.5%) |
+| Preflight | 10/10 |
+
+We went to mainnet without a Base Sepolia rehearsal because no faucet would
+issue Sepolia ETH to a Nigerian-KYC account. Base gas is sub-cent, so the live
+test below runs on mainnet with deliberately tiny stakes — which also exercises
+the real Coinbase bundler and paymaster, something Sepolia only approximates.
+
+The deployer key is the owner and the only address that can resolve a dispute.
+It is a throwaway generated for this deployment and currently holds only gas.
+§5 still applies before real volume: move ownership to a Safe multisig.
+
+---
+
 ## 1. Verify locally (no keys, no faucet, no accounts)
 
 ```bash
