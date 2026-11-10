@@ -102,7 +102,10 @@ PIDS+=($!)
 const { MongoClient } = require("mongodb");
 const uri = "mongodb://127.0.0.1:" + process.env.MONGO_PORT + "/?directConnection=true";
 (async () => {
-  for (let i = 0; i < 60; i++) {
+  // Cold mongod startup was measured at 23s to first connection and 32s to a
+  // primary on a loaded macOS machine, so a tight budget here fails on a server
+  // that is merely slow. ~180 attempts of roughly a second each.
+  for (let i = 0; i < 180; i++) {
     try {
       const c = new MongoClient(uri, { serverSelectionTimeoutMS: 500 });
       await c.connect();
@@ -112,7 +115,7 @@ const uri = "mongodb://127.0.0.1:" + process.env.MONGO_PORT + "/?directConnectio
           members: [{ _id: 0, host: "127.0.0.1:" + process.env.MONGO_PORT }],
         }});
       } catch (e) { if (!/already initialized/i.test(e.message)) throw e; }
-      for (let j = 0; j < 60; j++) {
+      for (let j = 0; j < 240; j++) {
         if ((await c.db("admin").command({ hello: 1 })).isWritablePrimary) { await c.close(); return; }
         await new Promise(r => setTimeout(r, 250));
       }

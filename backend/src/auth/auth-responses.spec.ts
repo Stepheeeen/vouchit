@@ -15,6 +15,12 @@ import { startMongo, type MongoHarness } from '../../test/mongo-harness';
 import { AppModule } from '../app.module';
 import { PrismaClient } from '@prisma/client';
 
+// Booting a real mongod replica set and the whole Nest app does not fit in
+// Jest's 5s default. Cold start was measured at over 30s on a loaded machine,
+// which failed here as an unhelpful hook timeout rather than as the slow
+// startup it actually was.
+jest.setTimeout(180_000);
+
 /** Fields that must never appear in any response body, at any depth. */
 const FORBIDDEN = ['password', 'otp', 'otpExpiresAt'];
 

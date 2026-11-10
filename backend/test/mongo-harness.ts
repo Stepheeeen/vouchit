@@ -54,11 +54,22 @@ export async function startMongo(port = 27077): Promise<MongoHarness> {
   const directUri = `mongodb://127.0.0.1:${port}/?directConnection=true`;
 
   // Wait for the server to accept connections, then initiate the replica set.
-  const deadline = Date.now() + 30_000;
+  //
+  // The budget is generous on purpose. A cold mongod on a spinning-disk or
+  // otherwise loaded macOS machine measured 23s to accept its first connection
+  // and 32s to elect a primary — just past the 30s this used to allow, so the
+  // suite failed with "mongod did not become ready" on a server that was in
+  // fact starting normally. A warm page cache does the same work in 9s, which
+  // is why it looked fine until it wasn't. Override with MONGO_START_TIMEOUT_MS.
+  const startBudgetMs = Number(process.env.MONGO_START_TIMEOUT_MS) || 120_000;
+  const deadline = Date.now() + startBudgetMs;
   for (;;) {
     if (Date.now() > deadline) {
       proc.kill('SIGKILL');
-      throw new Error('mongod did not become ready within 30s');
+      throw new Error(
+        `mongod did not become ready within ${Math.round(startBudgetMs / 1000)}s ` +
+          `(dbPath ${dbPath}). Raise MONGO_START_TIMEOUT_MS if this machine is just slow.`,
+      );
     }
     try {
       const client = new MongoClient(directUri, { serverSelectionTimeoutMS: 500 });
@@ -76,12 +87,26 @@ export async function startMongo(port = 27077): Promise<MongoHarness> {
       for (;;) {
         const status: any = await client.db('admin').command({ hello: 1 });
         if (status.isWritablePrimary) break;
-        if (Date.now() > deadline) throw new Error('replica set never elected a primary');
+        // Rethrown through the outer catch, which retries until the shared
+        // deadline — so surface the distinct cause rather than letting it be
+        // reported as a plain startup timeout.
+        if (Date.now() > deadline) {
+          proc.kill('SIGKILL');
+          throw Object.assign(
+            new Error('mongod accepted connections but never elected a primary'),
+            { fatal: true },
+          );
+        }
         await new Promise((r) => setTimeout(r, 250));
       }
       await client.close();
       break;
-    } catch {
+    } catch (err: any) {
+      // The retry loop exists for "not listening yet", which looks like a
+      // connection error. A failed primary election is a different animal: it
+      // means the server IS up, so retrying only burns the budget and then
+      // misreports the cause as a startup timeout. Let it out.
+      if (err?.fatal) throw err;
       await new Promise((r) => setTimeout(r, 500));
     }
   }
