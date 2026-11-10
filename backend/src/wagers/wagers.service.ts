@@ -117,7 +117,8 @@ export class WagersService {
     }
 
     // A zero challenger address means anyone can join. That is the riskier
-    // shape, so it is gated behind the verified tier.
+    // shape, so it is gated per tier — see TIER_LIMITS, where NEWCOMER is
+    // currently allowed because no signal can promote an account past it.
     const isOpenWager = onChain.challenger === '0x0000000000000000000000000000000000000000';
     if (isOpenWager && !limits.canCreateOpenWagers) {
       throw new BadRequestException(

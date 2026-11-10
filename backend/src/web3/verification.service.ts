@@ -27,7 +27,19 @@ export interface TierLimits {
 }
 
 export const TIER_LIMITS: Record<VerificationTier, TierLimits> = {
-  [VerificationTier.NEWCOMER]: { maxConcurrentWagers: 3, canCreateOpenWagers: false },
+  // NEWCOMER may create open wagers. That is a deliberate relaxation, not an
+  // oversight: on Base mainnet the wallet-age signal is unavailable (Etherscan's
+  // free tier refuses chain 8453) and the attestation reader is still stubbed,
+  // so the only route out of NEWCOMER is 5 settled wagers against 3 distinct
+  // opponents — which nobody can reach if NEWCOMER cannot post a wager a
+  // stranger can join. Leaving it false made tier 0 a dead end rather than a
+  // starting point.
+  //
+  // What still bounds a fresh account: the per-tier stake ceiling (0.01 ETH /
+  // 25 USDC, enforced before any gas is spent) and 3 concurrent wagers. Restore
+  // this to false once wallet age or attestation can actually promote an
+  // account, so the open-wager permission means something again.
+  [VerificationTier.NEWCOMER]: { maxConcurrentWagers: 3, canCreateOpenWagers: true },
   [VerificationTier.VERIFIED]: { maxConcurrentWagers: 10, canCreateOpenWagers: true },
   [VerificationTier.TRUSTED]: { maxConcurrentWagers: Number.MAX_SAFE_INTEGER, canCreateOpenWagers: true },
 };
