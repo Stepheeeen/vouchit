@@ -4,8 +4,13 @@ services:
     env: node
     plan: free
     rootDir: backend
-    buildCommand: npm install && npx prisma generate && npm run build
-    startCommand: npm run start:prod
+    # --include=dev is required, not optional: NODE_ENV=production below makes
+    # npm skip devDependencies, and @nestjs/cli lives there — so a plain
+    # `npm install` builds nothing and the deploy dies on `nest: not found`.
+    buildCommand: npm install --include=dev && npx prisma generate && npm run build
+    # Run the compiled output directly. `npm run start:prod` would rebuild via
+    # its prestart hook on every boot, including every wake from sleep.
+    startCommand: node dist/main.js
     envVars:
       - key: NODE_ENV
         value: production
