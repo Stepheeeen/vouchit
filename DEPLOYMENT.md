@@ -32,6 +32,41 @@ It is a throwaway generated for this deployment and currently holds only gas.
 
 ---
 
+## 0b. Staging environment (live)
+
+| | |
+|---|---|
+| Frontend | https://vouchit-git-web3-production-stepheeeen.vercel.app |
+| API | https://vouchit-staging.onrender.com |
+| Render service | `vouchit-staging` (`srv-dbpa7bgm7kps73aavfmg`), branch `web3-production`, free plan |
+| Database | `vouchit_staging` on the production Atlas cluster — separate database, empty |
+| Chain | Base **mainnet** (8453), escrow `0xc756…FD14` |
+
+Verified live against it: `/wagers` and `/users/leaderboard` answer 200 with no
+`password`/`otp`/`email` fields, `/users/me` and `/web3/verification` are 401
+unauthenticated, a malformed user id is 404 rather than 500, CORS admits the
+Vercel branch alias and rejects an unknown origin.
+
+Vercel variables are scoped so Production is untouched: `NEXT_PUBLIC_CHAIN` and
+`NEXT_PUBLIC_ESCROW_ADDRESS` on Preview, and `NEXT_PUBLIC_API_URL` scoped to the
+`web3-production` **branch**, which overrides the broader Preview/Production
+record without modifying it.
+
+That branch scoping matters more than it looks. `API_BASE_URL` in
+`frontend/src/lib/api.ts` falls back to `https://vouchit.onrender.com` — the
+**production** API — whenever `NEXT_PUBLIC_API_URL` is unset. A preview missing
+that variable does not fail loudly; it quietly drives the live naira backend. A
+local build with the staging values confirmed the staging URL is inlined and the
+fallback string is absent from the output entirely.
+
+**Preview deployment protection is off**, so the URL is publicly reachable by
+anyone who has it. That was a deliberate choice to let the client and early
+testers in without Vercel accounts; it also means a real-money app sits on a
+guessable URL. Turn it back on in Vercel → Settings → Deployment Protection
+when the test window closes.
+
+---
+
 ## 1. Verify locally (no keys, no faucet, no accounts)
 
 ```bash
@@ -149,9 +184,12 @@ takes ~50 seconds, which testers read as "broken".
 
 ---
 
-## 4. Live test on Sepolia
+## 4. Live test on Base mainnet
 
-Two browser profiles, two wallets, two people.
+Two browser profiles, two wallets, two people — with **real money**, so keep
+stakes at the floor. Tier 0 allows 0.0002–0.01 ETH; 0.0002 ETH is roughly
+$0.70. Each tester needs their own ETH on Base: `fund:testers` deliberately
+refuses to run on mainnet, so it cannot help here.
 
 - [ ] Sign in with a passkey, no extension and no seed phrase — **the one thing local testing cannot cover**
 - [ ] Link the wallet; confirm it survives a reload and a second device
@@ -163,9 +201,10 @@ Two browser profiles, two wallets, two people.
 - [ ] A wager expires unjoined → creator refunded in full, no fee
 - [ ] Tier limits bite: a fresh account cannot open a wager to anyone, or exceed its stake cap
 
-Fund testers with `npm run fund:testers` (addresses in `contracts/testers.txt`
-or `TESTER_ADDRESSES`). It refuses to run on mainnet, skips the already-funded,
-and prices the run before sending so it cannot half-fund a group.
+The last item reads differently now: tier 0 may create open wagers (see the
+comment on `TIER_LIMITS`), so what still bites is the 0.01 ETH stake ceiling and
+the 3-wager concurrency limit. Confirm both, and confirm the ceiling is refused
+*before* any gas is spent rather than after.
 
 ---
 
@@ -178,15 +217,17 @@ and prices the run before sending so it cannot half-fund a group.
       a KMS signer. Generate a fresh key; do not promote the testnet one.
 - [ ] Re-run the security review over the final diff.
 - [ ] Consider a third-party audit of `VouchitEscrow.sol` before real volume.
-- [ ] **Etherscan plan.** Wallet-age tiering uses the V2 unified API. The free
-      tier covers Base Sepolia (84532) but **not** Base mainnet (8453), which
-      answers "Free API access is not supported for this chain". Without a paid
-      plan the signal reports unavailable and tier 1 is unreachable by wallet
-      age — leaving every account at tier 0 (invite-only, smallest cap)
-      indefinitely, since the Coinbase attestation reader is still stubbed and
-      the settlement route needs 5 settled wagers across 3 distinct opponents.
-- [ ] Settle the **tier-0 defaults**. Whatever the plan, the starting tier has
-      to be usable on day one.
+- [ ] **Etherscan plan — confirmed, not predicted.** Called live against the
+      V2 API with the project key: chain 84532 answers normally, chain 8453
+      answers `"Free API access is not supported for this chain"`. So on mainnet
+      wallet age is permanently unavailable, the attestation reader is stubbed,
+      and the only route out of NEWCOMER is 5 settled wagers across 3 distinct
+      opponents. Tier 0 was therefore opened to open wagers so accounts can
+      reach that record at all. Buying a paid plan restores wallet-age promotion
+      and lets the open-wager gate go back to being a real gate.
+- [x] **Tier-0 defaults settled.** NEWCOMER: open wagers allowed, 3 concurrent,
+      0.01 ETH / 25 USDC ceiling. Revisit the open-wager permission the moment a
+      promotion signal actually works.
 - [ ] Decide the fate of the old production database and the naira app.
 - [ ] Confirm the treasury wallet is one you can actually open. Fees are
       irreversible, and an address pasted without its checksum hides a typo.
