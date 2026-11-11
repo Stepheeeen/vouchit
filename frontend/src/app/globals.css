@@ -1,6 +1,12 @@
 @import "tailwindcss";
 
 :root {
+  /* Height of the mobile tab bar in AppNav. Anything that pins itself to the
+     bottom of the viewport must clear this on small screens, or the nav
+     (z-30) renders straight over it — which is exactly what hid the
+     "Lock stake in escrow" button on phones. */
+  --mobile-nav-h: 68px;
+
   /* Premium Light Theme — Vouchit (White & Teal) */
   --background: #f0fafa;        /* Very light teal-gray wash */
   --surface: #ffffff;

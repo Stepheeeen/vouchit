@@ -283,7 +283,9 @@ export default function AppNav() {
       </header>
 
       {/* ── MOBILE BOTTOM NAV (< md) ─────────────────────── */}
-      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 bg-white/90 backdrop-blur-md border-t border-[var(--border)]">
+      {/* Height is pinned to --mobile-nav-h so bottom-anchored page elements
+          can offset themselves by exactly this and stop being covered. */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-30 h-[var(--mobile-nav-h)] bg-white/90 backdrop-blur-md border-t border-[var(--border)]">
         <div className="flex justify-around items-center px-2 py-2">
           {links.map((item) => {
             const active = isActive(item.href);

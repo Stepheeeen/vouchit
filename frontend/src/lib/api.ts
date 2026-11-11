@@ -44,12 +44,21 @@ export function setAuthToken(token: string) {
     sameSite: 'Lax',
     secure: !isLocal,
   });
-  localStorage.setItem('vouchit_token', token); // kept for backward compatibility during transition
+  // Deliberately NOT mirrored into localStorage. The copy that used to live
+  // there ("kept for backward compatibility during transition") handed any
+  // XSS a seven-day bearer token in one line of script. The cookie is no
+  // fortress either — js-cookie cannot set HttpOnly — but it is not readable
+  // by a stray `localStorage.getItem` and it expires with the session rules.
 }
 
 export function clearAuthToken() {
   Cookies.remove('vouchit_token', { path: '/' });
-  localStorage.removeItem('vouchit_token');
+  // Clear the legacy copy for anyone still carrying one from an older build.
+  try {
+    localStorage.removeItem('vouchit_token');
+  } catch {
+    /* private mode / blocked storage */
+  }
 }
 
 export const authApi = {
@@ -59,6 +68,17 @@ export const authApi = {
     fetchApi('/auth/verify-email', { method: 'POST', body: JSON.stringify({ email, otp }) }),
   login: (email: string, password: string) =>
     fetchApi('/auth/login', { method: 'POST', body: JSON.stringify({ email, password }) }),
+  /** Second step when the account has two-factor enabled. */
+  loginTwoFactor: (email: string, otp: string) =>
+    fetchApi('/auth/login/2fa', { method: 'POST', body: JSON.stringify({ email, otp }) }),
+  /** A real endpoint, rather than re-calling register with a placeholder. */
+  resendOtp: (email: string) =>
+    fetchApi('/auth/resend-otp', { method: 'POST', body: JSON.stringify({ email }) }),
+  forgotPassword: (email: string) =>
+    fetchApi('/auth/forgot-password', { method: 'POST', body: JSON.stringify({ email }) }),
+  resetPassword: (email: string, otp: string, password: string) =>
+    fetchApi('/auth/reset-password', { method: 'POST', body: JSON.stringify({ email, otp, password }) }),
+  signOutAllDevices: () => fetchApi('/auth/sign-out-all', { method: 'POST' }),
 };
 
 export const wagersApi = {
@@ -71,10 +91,19 @@ export const wagersApi = {
     isSymmetric: boolean,
     expiryDays: number,
     contractWagerId: string,
+    category: string,
   ) =>
     fetchApi('/wagers', {
       method: 'POST',
-      body: JSON.stringify({ description, stake, tokenAddress, isSymmetric, expiryDays, contractWagerId }),
+      body: JSON.stringify({
+        description,
+        stake,
+        tokenAddress,
+        isSymmetric,
+        expiryDays,
+        contractWagerId,
+        category,
+      }),
     }),
   getAll: () => fetchApi('/wagers'),
   getById: (id: string) => fetchApi(`/wagers/${id}`),
@@ -88,12 +117,22 @@ export const wagersApi = {
 
 export const userApi = {
   getProfile: () => fetchApi('/users/me'),
-  updateProfile: (data: { displayName?: string; bio?: string; avatarUrl?: string }) =>
-    fetchApi('/users/me', { method: 'PATCH', body: JSON.stringify(data) }),
+  updateProfile: (data: {
+    displayName?: string;
+    bio?: string;
+    avatarUrl?: string;
+    username?: string;
+  }) => fetchApi('/users/me', { method: 'PATCH', body: JSON.stringify(data) }),
   getPublicProfile: (id: string) => fetchApi(`/users/${id}`),
   exportMyData: () => fetchApi('/users/me/export'),
   changePassword: (currentPassword: string, newPassword: string) =>
     fetchApi('/users/me/password', { method: 'PATCH', body: JSON.stringify({ currentPassword, newPassword }) }),
+  /** Preferences live on the server now, not in this browser's localStorage. */
+  getPreferences: () => fetchApi('/users/me/preferences'),
+  updatePreferences: (patch: Record<string, boolean>) =>
+    fetchApi('/users/me/preferences', { method: 'PATCH', body: JSON.stringify(patch) }),
+  deleteAccount: (password: string) =>
+    fetchApi('/users/me', { method: 'DELETE', body: JSON.stringify({ password }) }),
 };
 
 export const web3Api = {

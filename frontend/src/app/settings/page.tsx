@@ -81,10 +81,12 @@ export default function SettingsPage() {
   const [notifMarketing, setNotifMarketing] = useState(false);
   const [notifEmail, setNotifEmail] = useState(true);
 
-  // Security toggles
+  // Security toggles. "Biometric login" is gone: it was a localStorage flag
+  // with nothing behind it, and the passkey it implied belongs to the wallet,
+  // not to a Vouchit account setting.
   const [twoFA, setTwoFA] = useState(false);
-  const [biometric, setBiometric] = useState(false);
   const [loginAlerts, setLoginAlerts] = useState(true);
+  const [savingPref, setSavingPref] = useState<string | null>(null);
 
   // Privacy
   const [publicProfile, setPublicProfile] = useState(true);
@@ -96,8 +98,38 @@ export default function SettingsPage() {
   const [isUploadingAvatar, setIsUploadingAvatar] = useState(false);
   const [avatarError, setAvatarError] = useState("");
 
-  // Data export
+  const [username, setUsername] = useState("");
+
+  // Data export + account deletion
   const [isExporting, setIsExporting] = useState(false);
+  const [deletePassword, setDeletePassword] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  /**
+   * Persist one preference.
+   *
+   * Every switch on this page used to call localStorage.setItem and stop
+   * there. The server never heard about any of it, so "public profile: off"
+   * left the profile public and "two-factor: on" added no second factor —
+   * the UI simply lied about the state of the account.
+   */
+  const savePreference = async (key: string, value: boolean, apply: (v: boolean) => void) => {
+    const previous = !value;
+    apply(value);
+    setSavingPref(key);
+    try {
+      const { userApi } = await import("@/lib/api");
+      await userApi.updatePreferences({ [key]: value });
+    } catch (err: any) {
+      // Put the switch back rather than showing a state the server rejected.
+      apply(previous);
+      const { toast } = await import("sonner");
+      toast.error(err?.message || "Could not save that setting.");
+    } finally {
+      setSavingPref(null);
+    }
+  };
 
   const MAX_AVATAR_BYTES = 5 * 1024 * 1024;
 
@@ -131,6 +163,49 @@ export default function SettingsPage() {
     }
   };
 
+  const [isSigningOutAll, setIsSigningOutAll] = useState(false);
+
+  const handleSignOutEverywhere = async () => {
+    if (isSigningOutAll) return;
+    setIsSigningOutAll(true);
+    try {
+      const { authApi, clearAuthToken } = await import("@/lib/api");
+      await authApi.signOutAllDevices();
+      clearAuthToken();
+      const { toast } = await import("sonner");
+      toast.success("Signed out on every device.");
+      router.push("/auth/login");
+    } catch (err: any) {
+      const { toast } = await import("sonner");
+      toast.error(err?.message || "Could not sign out everywhere.");
+      setIsSigningOutAll(false);
+    }
+  };
+
+  /**
+   * Delete the account for good.
+   *
+   * There was no way to leave at all. The password is required because this
+   * cannot be undone, and the API refuses while any wager is still live
+   * on-chain — someone else's stake is sitting opposite yours.
+   */
+  const handleDeleteAccount = async () => {
+    if (isDeleting) return;
+    setIsDeleting(true);
+    try {
+      const { userApi, clearAuthToken } = await import("@/lib/api");
+      await userApi.deleteAccount(deletePassword);
+      clearAuthToken();
+      const { toast } = await import("sonner");
+      toast.success("Your account has been deleted.");
+      router.push("/");
+    } catch (err: any) {
+      const { toast } = await import("sonner");
+      toast.error(err?.message || "Could not delete your account.");
+      setIsDeleting(false);
+    }
+  };
+
   const handleExportData = async () => {
     setIsExporting(true);
     try {
@@ -155,25 +230,32 @@ export default function SettingsPage() {
     const load = async () => {
       try {
         const { userApi } = await import("@/lib/api");
-        const profile = await userApi.getProfile();
+        const [profile, prefs] = await Promise.all([
+          userApi.getProfile(),
+          userApi.getPreferences().catch(() => null),
+        ]);
         setUser(profile);
 
         setName(profile.displayName || "");
+        setUsername(profile.username || "");
         setEmail(profile.email || "");
         setBio(profile.bio || "");
         setAvatarUrl(profile.avatarUrl || null);
 
-        // Load local toggles
-        setNotifWager(localStorage.getItem("notifWager") !== "false");
-        setNotifPayout(localStorage.getItem("notifPayout") !== "false");
-        setNotifDispute(localStorage.getItem("notifDispute") !== "false");
-        setNotifMarketing(localStorage.getItem("notifMarketing") === "true");
-        setNotifEmail(localStorage.getItem("notifEmail") !== "false");
-        setTwoFA(localStorage.getItem("twoFA") === "true");
-        setBiometric(localStorage.getItem("biometric") === "true");
-        setLoginAlerts(localStorage.getItem("loginAlerts") !== "false");
-        setPublicProfile(localStorage.getItem("publicProfile") !== "false");
-        setShowOnLeaderboard(localStorage.getItem("showOnLeaderboard") !== "false");
+        // Preferences come from the account, so they follow the user to any
+        // device and actually govern behaviour. They used to be read out of
+        // this browser's localStorage, where they governed nothing.
+        if (prefs) {
+          setNotifWager(prefs.notifyWager);
+          setNotifPayout(prefs.notifyPayout);
+          setNotifDispute(prefs.notifyDispute);
+          setNotifMarketing(prefs.notifyMarketing);
+          setNotifEmail(prefs.notifyEmail);
+          setTwoFA(prefs.twoFactorEnabled);
+          setLoginAlerts(prefs.loginAlertsEnabled);
+          setPublicProfile(prefs.publicProfile);
+          setShowOnLeaderboard(prefs.showOnLeaderboard);
+        }
       } catch {
         router.push("/auth/login");
       } finally {
@@ -189,7 +271,11 @@ export default function SettingsPage() {
     setProfileError("");
     try {
       const { userApi } = await import("@/lib/api");
-      await userApi.updateProfile({ displayName: name, bio });
+      await userApi.updateProfile({
+        displayName: name,
+        bio,
+        ...(username.trim() ? { username: username.trim() } : {}),
+      });
       setSaved(true);
       const { toast } = await import("sonner");
       toast.success("Profile updated successfully!");
@@ -371,13 +457,32 @@ export default function SettingsPage() {
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div className="flex flex-col gap-1.5">
-                      <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Full Name</label>
+                      <label htmlFor="full-name" className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Full Name</label>
                       <input
+                        id="full-name"
                         value={name}
                         onChange={e => setName(e.target.value)}
                         className="w-full border border-[var(--border)] rounded-xl px-4 py-2.5 text-sm bg-white focus:outline-none focus:border-[var(--primary)] transition-colors"
                         placeholder="John Doe"
                       />
+                    </div>
+                    {/* No handle was ever collected, so every public profile
+                        and leaderboard row rendered as "Vouchit user" — you
+                        could not tell who you were staking against. */}
+                    <div className="flex flex-col gap-1.5">
+                      <label htmlFor="username" className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Username</label>
+                      <input
+                        id="username"
+                        value={username}
+                        onChange={e => setUsername(e.target.value)}
+                        className="w-full border border-[var(--border)] rounded-xl px-4 py-2.5 text-sm bg-white focus:outline-none focus:border-[var(--primary)] transition-colors"
+                        placeholder="yourhandle"
+                        autoComplete="username"
+                        spellCheck={false}
+                      />
+                      <p className="text-[10px] text-[var(--muted-foreground)] font-medium">
+                        3–20 characters. Letters, numbers, underscore or hyphen. Shown publicly.
+                      </p>
                     </div>
                     <div className="flex flex-col gap-1.5">
                       <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Email Address</label>
@@ -425,42 +530,37 @@ export default function SettingsPage() {
                 <div className="mb-5">
                   <p className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-2">In-App Alerts</p>
                   <SettingRow label="Wager Activity" sub="Updates on your active wagers">
-                    <Toggle enabled={notifWager} onToggle={() => {
-                      const val = !notifWager;
-                      setNotifWager(val);
-                      localStorage.setItem("notifWager", String(val));
-                    }} />
+                    <Toggle
+                      enabled={notifWager}
+                      onToggle={() => savePreference("notifyWager", !notifWager, setNotifWager)}
+                    />
                   </SettingRow>
                   <SettingRow label="Payouts & Settlements" sub="When funds are released or received">
-                    <Toggle enabled={notifPayout} onToggle={() => {
-                      const val = !notifPayout;
-                      setNotifPayout(val);
-                      localStorage.setItem("notifPayout", String(val));
-                    }} />
+                    <Toggle
+                      enabled={notifPayout}
+                      onToggle={() => savePreference("notifyPayout", !notifPayout, setNotifPayout)}
+                    />
                   </SettingRow>
                   <SettingRow label="Disputes" sub="Updates on open dispute cases">
-                    <Toggle enabled={notifDispute} onToggle={() => {
-                      const val = !notifDispute;
-                      setNotifDispute(val);
-                      localStorage.setItem("notifDispute", String(val));
-                    }} />
+                    <Toggle
+                      enabled={notifDispute}
+                      onToggle={() => savePreference("notifyDispute", !notifDispute, setNotifDispute)}
+                    />
                   </SettingRow>
                   <SettingRow label="Promotions & News" sub="Platform updates and featured wagers">
-                    <Toggle enabled={notifMarketing} onToggle={() => {
-                      const val = !notifMarketing;
-                      setNotifMarketing(val);
-                      localStorage.setItem("notifMarketing", String(val));
-                    }} />
+                    <Toggle
+                      enabled={notifMarketing}
+                      onToggle={() => savePreference("notifyMarketing", !notifMarketing, setNotifMarketing)}
+                    />
                   </SettingRow>
                 </div>
                 <div>
                   <p className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-2">Delivery Channels</p>
                   <SettingRow label="Email Notifications" sub={email}>
-                    <Toggle enabled={notifEmail} onToggle={() => {
-                      const val = !notifEmail;
-                      setNotifEmail(val);
-                      localStorage.setItem("notifEmail", String(val));
-                    }} />
+                    <Toggle
+                      enabled={notifEmail}
+                      onToggle={() => savePreference("notifyEmail", !notifEmail, setNotifEmail)}
+                    />
                   </SettingRow>
                 </div>
               </div>
@@ -472,25 +572,16 @@ export default function SettingsPage() {
                 <div className="bg-white border border-[var(--border)] rounded-2xl p-6" style={{ boxShadow: "var(--shadow-sm)" }}>
                   <SectionHeader icon={Shield} title="Security" subtitle="Keep your account safe." />
                   <SettingRow label="Two-Factor Authentication" sub="Require OTP on every login">
-                    <Toggle enabled={twoFA} onToggle={() => {
-                      const val = !twoFA;
-                      setTwoFA(val);
-                      localStorage.setItem("twoFA", String(val));
-                    }} />
-                  </SettingRow>
-                  <SettingRow label="Biometric Login" sub="Use fingerprint or Face ID">
-                    <Toggle enabled={biometric} onToggle={() => {
-                      const val = !biometric;
-                      setBiometric(val);
-                      localStorage.setItem("biometric", String(val));
-                    }} />
+                    <Toggle
+                      enabled={twoFA}
+                      onToggle={() => savePreference("twoFactorEnabled", !twoFA, setTwoFA)}
+                    />
                   </SettingRow>
                   <SettingRow label="Login Alerts" sub="Get notified of new sign-ins">
-                    <Toggle enabled={loginAlerts} onToggle={() => {
-                      const val = !loginAlerts;
-                      setLoginAlerts(val);
-                      localStorage.setItem("loginAlerts", String(val));
-                    }} />
+                    <Toggle
+                      enabled={loginAlerts}
+                      onToggle={() => savePreference("loginAlertsEnabled", !loginAlerts, setLoginAlerts)}
+                    />
                   </SettingRow>
                 </div>
 
@@ -601,22 +692,21 @@ export default function SettingsPage() {
               <div className="bg-white border border-[var(--border)] rounded-2xl p-6" style={{ boxShadow: "var(--shadow-sm)" }}>
                 <SectionHeader icon={Eye} title="Privacy" subtitle="Control your visibility and data." />
                 <SettingRow label="Public Profile" sub="Anyone can view your profile and stats">
-                  <Toggle enabled={publicProfile} onToggle={() => {
-                    const val = !publicProfile;
-                    setPublicProfile(val);
-                    localStorage.setItem("publicProfile", String(val));
-                  }} />
+                  <Toggle
+                    enabled={publicProfile}
+                    onToggle={() => savePreference("publicProfile", !publicProfile, setPublicProfile)}
+                  />
                 </SettingRow>
                 <SettingRow label="Show on Leaderboard" sub="Appear in public rankings">
-                  <Toggle enabled={showOnLeaderboard} onToggle={() => {
-                    const val = !showOnLeaderboard;
-                    setShowOnLeaderboard(val);
-                    localStorage.setItem("showOnLeaderboard", String(val));
-                  }} />
+                  <Toggle
+                    enabled={showOnLeaderboard}
+                    onToggle={() => savePreference("showOnLeaderboard", !showOnLeaderboard, setShowOnLeaderboard)}
+                  />
                 </SettingRow>
-                <SettingRow label="Activity Status" sub="Show when you were last active">
-                  <Toggle enabled={false} onToggle={() => {}} />
-                </SettingRow>
+                {/* "Activity Status" lived here with onToggle={() => {}} and
+                    no feature behind it — a switch that could not be switched,
+                    describing something the app does not track. Removed rather
+                    than left as furniture. */}
                 <div className="mt-4 pt-4 border-t border-[var(--border)]">
                   <p className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-3">Data & Export</p>
                   <button
@@ -663,16 +753,82 @@ export default function SettingsPage() {
 
                 <div className="bg-white border border-[var(--border)] rounded-2xl p-6" style={{ boxShadow: "var(--shadow-sm)" }}>
                   <p className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mb-4">Session</p>
-                  <button 
-                    onClick={handleLogout}
-                    className="w-full flex items-center gap-3 p-4 rounded-xl border border-[var(--border)] text-sm font-semibold text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors mb-3">
-                    <LogOut className="h-4 w-4 text-[var(--muted-foreground)]" /> Sign Out of All Devices
+                  {/* This called handleLogout, which only drops the token in
+                      THIS browser. Every other session stayed valid for the
+                      rest of its seven days, while the label promised the
+                      opposite — the one control you reach for after a
+                      suspected compromise. It now moves the account's session
+                      generation forward server-side, which invalidates every
+                      token already issued. */}
+                  <button
+                    onClick={handleSignOutEverywhere}
+                    disabled={isSigningOutAll}
+                    className="w-full flex items-center gap-3 p-4 rounded-xl border border-[var(--border)] text-sm font-semibold text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors mb-3 disabled:opacity-60">
+                    {isSigningOutAll ? (
+                      <Loader2 className="h-4 w-4 animate-spin text-[var(--muted-foreground)]" />
+                    ) : (
+                      <LogOut className="h-4 w-4 text-[var(--muted-foreground)]" />
+                    )}
+                    {isSigningOutAll ? "Signing out everywhere…" : "Sign Out of All Devices"}
                   </button>
                   <button 
                     onClick={handleLogout}
                     className="w-full flex items-center gap-3 p-4 rounded-xl border border-[var(--border)] text-sm font-semibold text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors">
                     <LogOut className="h-4 w-4 text-[var(--muted-foreground)]" /> Sign Out
                   </button>
+                </div>
+
+                {/* Deleting the account was simply not offered anywhere, which
+                    leaves people with no way to withdraw consent for the data
+                    we hold on them. */}
+                <div className="bg-white border border-[var(--danger)]/40 rounded-2xl p-6" style={{ boxShadow: "var(--shadow-sm)" }}>
+                  <p className="text-xs font-semibold uppercase tracking-widest text-[var(--danger)] mb-2">Danger zone</p>
+                  <p className="text-sm text-[var(--muted-foreground)] mb-4 leading-relaxed">
+                    Deleting your account removes your profile, notifications and wager
+                    participation from Vouchit. It cannot be undone. Wagers already settled on
+                    the blockchain stay on the blockchain — we cannot erase those.
+                  </p>
+                  {!showDeleteConfirm ? (
+                    <button
+                      onClick={() => setShowDeleteConfirm(true)}
+                      className="w-full py-3 rounded-xl border border-[var(--danger)]/50 text-sm font-semibold text-[var(--danger)] hover:bg-red-50 transition-colors"
+                    >
+                      Delete my account
+                    </button>
+                  ) : (
+                    <div className="flex flex-col gap-3">
+                      <label htmlFor="delete-password" className="text-xs font-semibold text-[var(--foreground)]">
+                        Confirm with your password
+                      </label>
+                      <input
+                        id="delete-password"
+                        type="password"
+                        autoComplete="current-password"
+                        value={deletePassword}
+                        onChange={(e) => setDeletePassword(e.target.value)}
+                        className="w-full px-4 py-3 rounded-xl border border-[var(--border)] text-sm focus:outline-none focus:border-[var(--danger)]"
+                      />
+                      <div className="flex gap-3">
+                        <button
+                          onClick={() => {
+                            setShowDeleteConfirm(false);
+                            setDeletePassword("");
+                          }}
+                          className="flex-1 py-3 rounded-xl border border-[var(--border)] text-sm font-semibold hover:bg-[var(--muted)] transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={handleDeleteAccount}
+                          disabled={isDeleting || deletePassword.length === 0}
+                          className="flex-1 py-3 rounded-xl bg-[var(--danger)] text-white text-sm font-semibold disabled:opacity-50 hover:opacity-90 transition-opacity flex items-center justify-center gap-2"
+                        >
+                          {isDeleting && <Loader2 className="h-4 w-4 animate-spin" />}
+                          {isDeleting ? "Deleting…" : "Permanently delete"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 <div className="bg-[var(--danger)]/5 border border-[var(--danger)]/20 rounded-2xl p-6">

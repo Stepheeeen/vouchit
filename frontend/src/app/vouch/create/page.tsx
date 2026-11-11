@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { ArrowLeft, ArrowRight, Info, AlertCircle, Wallet } from "lucide-react";
 import Link from "next/link";
@@ -10,10 +10,20 @@ import { useWeb3 } from "@/context/Web3Context";
 import { useEscrow } from "@/lib/web3/useEscrow";
 import { getTokens } from "@/lib/web3/tokens";
 import { ACTIVE_CHAIN, isEscrowConfigured } from "@/lib/web3/config";
-import { formatUnits, parseUnits } from "viem";
+import { formatUnits, parseUnits, isAddress, zeroAddress } from "viem";
 
 const PROTOCOL_FEE_BPS = 250n;
 const BPS = 10_000n;
+
+/** Must match WAGER_CATEGORIES on the API, and Explore's filter chips. */
+const CATEGORIES = [
+  { value: "SPORTS", label: "Sports" },
+  { value: "CRYPTO", label: "Crypto" },
+  { value: "LIFESTYLE", label: "Lifestyle" },
+  { value: "ENTERTAINMENT", label: "Entertainment" },
+  { value: "FINANCE", label: "Finance" },
+  { value: "OTHER", label: "Other" },
+];
 
 export default function CreateVouchPage() {
   const router = useRouter();
@@ -26,9 +36,35 @@ export default function CreateVouchPage() {
   const [stake, setStake] = useState("");
   const [isSymmetric, setIsSymmetric] = useState(true);
   const [expiryDays, setExpiryDays] = useState("1");
+  const [category, setCategory] = useState("OTHER");
+  // Blank means anyone may join. There was no way to name an opponent at all,
+  // so every wager created here was open to strangers — while the Join page
+  // told people to ask the creator for an invite code that could not exist.
+  const [opponent, setOpponent] = useState("");
+  const [verification, setVerification] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState("");
   const [error, setError] = useState("");
+
+  // The tier decides the stake ceiling. Fetched up front so the limit can be
+  // shown and enforced BEFORE the user pays gas — a server-side rejection
+  // after the stake is escrowed strands their funds with no wager to show.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const { web3Api } = await import("@/lib/api");
+        const data = await web3Api.getVerification();
+        if (!cancelled) setVerification(data);
+      } catch {
+        // Not signed in, or the call failed: fall back to no client-side cap
+        // and let the API be the authority.
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   const token = useMemo(
     () => tokens.find((t) => t.address === tokenAddress) ?? tokens[0],
@@ -45,11 +81,54 @@ export default function CreateVouchPage() {
     }
   }, [stake, token]);
 
-  const isStakeValid = stakeAmount !== null && token !== undefined && stakeAmount >= token.minStake;
+  /** Tier stake ceiling for the selected token, in base units. */
+  const maxStake = useMemo(() => {
+    const raw = verification?.stakeCaps?.[token?.symbol ?? ""];
+    if (raw === undefined || raw === null) return null;
+    try {
+      return BigInt(raw);
+    } catch {
+      return null;
+    }
+  }, [verification, token]);
+
+  const isAboveCap = stakeAmount !== null && maxStake !== null && stakeAmount > maxStake;
+  const isBelowMin = stakeAmount !== null && token !== undefined && stakeAmount < token.minStake;
+  const isStakeValid = stakeAmount !== null && token !== undefined && !isBelowMin && !isAboveCap;
   const isDescValid = description.length >= 10 && description.length <= 280;
-  const isValid = isStakeValid && isDescValid && isConnected && isCorrectChain;
+
+  const opponentTrimmed = opponent.trim();
+  const isOpponentValid = opponentTrimmed === "" || isAddress(opponentTrimmed);
+  const isOpenWager = opponentTrimmed === "";
+
+  const isValid =
+    isStakeValid && isDescValid && isOpponentValid && isConnected && isCorrectChain;
 
   const minStakeLabel = token ? `${formatUnits(token.minStake, token.decimals)} ${token.symbol}` : "";
+  const maxStakeLabel =
+    token && maxStake !== null ? `${formatUnits(maxStake, token.decimals)} ${token.symbol}` : null;
+
+  /**
+   * Why the submit button is disabled.
+   *
+   * It used to just sit there inert: a filled-in form, a big primary button,
+   * and clicking it produced nothing at all — no message, no hint that a
+   * wallet was needed.
+   */
+  const blockedReason = (() => {
+    if (!isEscrowConfigured()) return "On-chain wagers are not configured for this environment.";
+    if (!isConnected) return "Connect your wallet to lock a stake.";
+    if (!isCorrectChain) return `Switch your wallet to ${ACTIVE_CHAIN.name}.`;
+    if (!isDescValid)
+      return description.length < 10
+        ? "Describe the wager in at least 10 characters."
+        : "Keep the description under 280 characters.";
+    if (stakeAmount === null) return "Enter a stake amount.";
+    if (isBelowMin) return `Minimum stake is ${minStakeLabel}.`;
+    if (isAboveCap) return `Your tier allows stakes up to ${maxStakeLabel}.`;
+    if (!isOpponentValid) return "That opponent address is not a valid wallet address.";
+    return null;
+  })();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -66,6 +145,9 @@ export default function CreateVouchPage() {
         token,
         stake,
         expiryDays: Number(expiryDays),
+        // The chain is what actually restricts who may join; the API mirrors
+        // this value rather than trusting a separate client field.
+        challenger: isOpenWager ? zeroAddress : (opponentTrimmed as `0x${string}`),
       });
 
       setStatus("Registering your wager…");
@@ -77,6 +159,7 @@ export default function CreateVouchPage() {
         isSymmetric,
         Number(expiryDays),
         wagerId,
+        category,
       );
       router.push(`/vouch/${wager.id}/invite`);
     } catch (err: any) {
@@ -114,7 +197,10 @@ export default function CreateVouchPage() {
           <h1 className="text-lg font-semibold">Create Vouch</h1>
         </header>
 
-        <form onSubmit={handleSubmit} className="flex-1 flex flex-col p-4 gap-8 pb-24">
+        <form
+          onSubmit={handleSubmit}
+          className="flex-1 flex flex-col p-4 gap-8 pb-[calc(var(--mobile-nav-h)+7rem)] md:pb-28"
+        >
           {!isEscrowConfigured() && (
             <div className="flex items-start gap-3 p-4 border border-[var(--danger)]/30 bg-red-50 text-red-700 text-sm font-semibold">
               <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
@@ -152,17 +238,29 @@ export default function CreateVouchPage() {
           {/* Currency */}
           <section className="flex flex-col gap-3">
             <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Stake Currency</label>
-            <div className="grid grid-cols-2 gap-0 border border-[var(--border)]">
+            {/*
+              Radio inputs, not click-handled divs. The previous markup was
+              invisible to the accessibility tree and unreachable by keyboard,
+              so the stake currency could only be chosen with a mouse.
+            */}
+            <div role="radiogroup" aria-label="Stake currency" className="grid grid-cols-2 gap-0 border border-[var(--border)]">
               {tokens.map((t, i) => (
-                <div
+                <label
                   key={t.address}
-                  onClick={() => setTokenAddress(t.address)}
-                  className={`p-4 cursor-pointer transition-colors ${i < tokens.length - 1 ? "border-r border-[var(--border)]" : ""} ${
+                  className={`p-4 cursor-pointer transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-offset-[-2px] focus-within:outline-[var(--primary)] ${i < tokens.length - 1 ? "border-r border-[var(--border)]" : ""} ${
                     tokenAddress === t.address
                       ? "bg-[var(--foreground)] text-[var(--background)]"
                       : "bg-transparent hover:bg-[var(--muted)]/50"
                   }`}
                 >
+                  <input
+                    type="radio"
+                    name="stake-currency"
+                    value={t.address}
+                    checked={tokenAddress === t.address}
+                    onChange={() => setTokenAddress(t.address)}
+                    className="sr-only"
+                  />
                   <div className="font-semibold uppercase tracking-widest text-xs">{t.symbol}</div>
                   <div
                     className={`text-[10px] mt-2 font-medium leading-tight ${
@@ -171,7 +269,7 @@ export default function CreateVouchPage() {
                   >
                     {t.name} on {ACTIVE_CHAIN.name}
                   </div>
-                </div>
+                </label>
               ))}
             </div>
           </section>
@@ -210,44 +308,138 @@ export default function CreateVouchPage() {
                   {token?.symbol}
                 </span>
               </div>
-              {stake && !isStakeValid && (
+              <div className="flex justify-between gap-3 text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">
+                <span>Min {minStakeLabel}</span>
+                {maxStakeLabel && <span>Your limit {maxStakeLabel}</span>}
+              </div>
+              {stake && isBelowMin && (
                 <span className="text-xs font-semibold text-[var(--danger)]">Minimum stake is {minStakeLabel}.</span>
+              )}
+              {stake && isAboveCap && (
+                // Caught here rather than after the escrow transaction, which
+                // would leave the stake locked on-chain with nothing to show
+                // for it. 999,999 USDC used to be accepted without a murmur.
+                <span className="text-xs font-semibold text-[var(--danger)]">
+                  Your current tier allows stakes up to {maxStakeLabel}. Build a settlement record to raise it.
+                </span>
               )}
             </div>
 
             <div className="flex flex-col gap-3">
               <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Wager Type</label>
-              <div className="grid grid-cols-2 gap-0 border border-[var(--border)]">
-                <div
-                  onClick={() => setIsSymmetric(true)}
-                  className={`p-4 cursor-pointer transition-colors border-r border-[var(--border)] ${isSymmetric ? "bg-[var(--foreground)] text-[var(--background)]" : "bg-transparent hover:bg-[var(--muted)]/50"}`}
+              <div role="radiogroup" aria-label="Wager type" className="grid grid-cols-2 gap-0 border border-[var(--border)]">
+                <label
+                  className={`p-4 cursor-pointer transition-colors border-r border-[var(--border)] focus-within:outline focus-within:outline-2 focus-within:outline-offset-[-2px] focus-within:outline-[var(--primary)] ${isSymmetric ? "bg-[var(--foreground)] text-[var(--background)]" : "bg-transparent hover:bg-[var(--muted)]/50"}`}
                 >
+                  <input
+                    type="radio"
+                    name="wager-type"
+                    checked={isSymmetric}
+                    onChange={() => setIsSymmetric(true)}
+                    className="sr-only"
+                  />
                   <div className="font-semibold uppercase tracking-widest text-xs">Symmetric</div>
                   <div className={`text-[10px] mt-2 font-medium leading-tight ${isSymmetric ? "text-[var(--background)]/80" : "text-[var(--muted-foreground)]"}`}>Opponent matches your stake exactly.</div>
-                </div>
-                <div
-                  onClick={() => setIsSymmetric(false)}
-                  className={`p-4 cursor-pointer transition-colors ${!isSymmetric ? "bg-[var(--foreground)] text-[var(--background)]" : "bg-transparent hover:bg-[var(--muted)]/50"}`}
+                </label>
+                <label
+                  className={`p-4 cursor-pointer transition-colors focus-within:outline focus-within:outline-2 focus-within:outline-offset-[-2px] focus-within:outline-[var(--primary)] ${!isSymmetric ? "bg-[var(--foreground)] text-[var(--background)]" : "bg-transparent hover:bg-[var(--muted)]/50"}`}
                 >
+                  <input
+                    type="radio"
+                    name="wager-type"
+                    checked={!isSymmetric}
+                    onChange={() => setIsSymmetric(false)}
+                    className="sr-only"
+                  />
                   <div className="font-semibold uppercase tracking-widest text-xs">Custom</div>
                   <div className={`text-[10px] mt-2 font-medium leading-tight ${!isSymmetric ? "text-[var(--background)]/80" : "text-[var(--muted-foreground)]"}`}>Opponent can set a different stake.</div>
-                </div>
+                </label>
               </div>
             </div>
           </section>
 
+          {/* Opponent */}
+          <section className="flex flex-col gap-3">
+            <label
+              htmlFor="opponent"
+              className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]"
+            >
+              Opponent <span className="normal-case tracking-normal font-medium">(optional)</span>
+            </label>
+            <Input
+              id="opponent"
+              value={opponent}
+              onChange={(e) => setOpponent(e.target.value)}
+              placeholder="0x… wallet address, or leave blank"
+              spellCheck={false}
+              autoComplete="off"
+              className="h-14 rounded-none font-mono text-sm focus-visible:ring-0 focus-visible:border-[var(--foreground)]"
+              aria-describedby="opponent-help"
+            />
+            <p id="opponent-help" className="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)] leading-relaxed">
+              {isOpenWager
+                ? "Open wager — anyone can join it from Explore."
+                : isOpponentValid
+                  ? "Only this wallet can join. The escrow contract enforces it."
+                  : "That is not a valid wallet address."}
+            </p>
+            {opponent && !isOpponentValid && (
+              <span className="text-xs font-semibold text-[var(--danger)]">
+                An opponent address must be a 42-character address starting with 0x.
+              </span>
+            )}
+          </section>
+
+          {/* Category */}
+          <section className="flex flex-col gap-3">
+            <label
+              htmlFor="category"
+              className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]"
+            >
+              Category
+            </label>
+            {/* Explore filters on this. It shipped with six filter chips and
+                no way to set a category, so none of them ever matched. */}
+            <select
+              id="category"
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="flex h-16 w-full border border-[var(--border)] bg-transparent px-4 text-base font-semibold uppercase tracking-widest focus-visible:outline-none focus-visible:border-[var(--foreground)] rounded-none"
+            >
+              {CATEGORIES.map((c) => (
+                <option key={c.value} value={c.value}>
+                  {c.label}
+                </option>
+              ))}
+            </select>
+          </section>
+
           {/* Expiry */}
           <section className="flex flex-col gap-3">
-            <label className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">Expiry</label>
+            <label
+              htmlFor="expiry"
+              className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]"
+            >
+              Expiry
+            </label>
+            {/* `appearance-none` is gone: it hid the dropdown arrow, so this
+                read as static text and nobody knew it could be changed. The
+                long options exist because the form's own example — "Arsenal
+                will win the Premier League this season" — could not be
+                created when a month was the maximum. */}
             <select
+              id="expiry"
               value={expiryDays}
               onChange={(e) => setExpiryDays(e.target.value)}
-              className="flex h-16 w-full border border-[var(--border)] bg-transparent px-4 text-base font-semibold uppercase tracking-widest focus-visible:outline-none focus-visible:border-[var(--foreground)] appearance-none rounded-none"
+              className="flex h-16 w-full border border-[var(--border)] bg-transparent px-4 text-base font-semibold uppercase tracking-widest focus-visible:outline-none focus-visible:border-[var(--foreground)] rounded-none"
             >
               <option value="1">24 Hours</option>
               <option value="3">3 Days</option>
               <option value="7">1 Week</option>
               <option value="30">1 Month</option>
+              <option value="90">3 Months</option>
+              <option value="180">6 Months</option>
+              <option value="365">1 Year</option>
             </select>
           </section>
 
@@ -279,13 +471,39 @@ export default function CreateVouchPage() {
           )}
         </form>
 
-        <div className="fixed bottom-0 left-0 right-0 p-4 bg-[var(--background)] border-t border-[var(--border)] flex justify-center z-20">
+        {/*
+          Sits ABOVE the mobile tab bar.
+
+          This was `fixed bottom-0 z-20` while AppNav's mobile nav is
+          `fixed bottom-0 z-30`, so on a phone the tab bar rendered straight
+          over the submit button: present in the DOM, invisible on screen, and
+          impossible to tap. Creating a wager — the whole point of the app —
+          could not be done on mobile at all. The offset clears the nav, and
+          the form's bottom padding clears this bar.
+        */}
+        <div className="fixed bottom-[var(--mobile-nav-h)] md:bottom-0 left-0 right-0 p-4 bg-[var(--background)] border-t border-[var(--border)] flex justify-center z-20">
           <div className="w-full max-w-2xl">
-            <Button onClick={handleSubmit} disabled={!isValid || isLoading || !isEscrowConfigured()} className="w-full">
+            <Button
+              onClick={handleSubmit}
+              disabled={!isValid || isLoading || !isEscrowConfigured()}
+              className="w-full"
+              aria-describedby={blockedReason ? "submit-blocked" : undefined}
+            >
               {isLoading ? (status || "LOCKING FUNDS…").toUpperCase() : "LOCK STAKE IN ESCROW"}
               {!isLoading && <ArrowRight className="ml-3 h-5 w-5" />}
             </Button>
-            {account && (
+            {/* Say why it is disabled. Clicking an inert primary button and
+                getting no response at all is the worst possible answer. */}
+            {blockedReason && !isLoading && (
+              <p
+                id="submit-blocked"
+                role="status"
+                className="text-[10px] text-center mt-2 font-semibold uppercase tracking-widest text-[var(--muted-foreground)]"
+              >
+                {blockedReason}
+              </p>
+            )}
+            {account && !blockedReason && (
               <p className="text-[10px] text-center mt-2 font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">
                 {account.slice(0, 6)}…{account.slice(-4)} · {ACTIVE_CHAIN.name}
               </p>

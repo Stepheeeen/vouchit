@@ -17,6 +17,7 @@ function getInitials(name: string) {
 export default function ProfilePage() {
   const [user, setUser] = useState<any>(null);
   const [wagers, setWagers] = useState<any[]>([]);
+  const [verification, setVerification] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 
@@ -40,13 +41,15 @@ export default function ProfilePage() {
   useEffect(() => {
     const load = async () => {
       try {
-        const { userApi, wagersApi } = await import("@/lib/api");
-        const [profileData, wagersData] = await Promise.all([
+        const { userApi, wagersApi, web3Api } = await import("@/lib/api");
+        const [profileData, wagersData, tierData] = await Promise.all([
           userApi.getProfile(),
           wagersApi.getMy().catch(() => []),
+          web3Api.getVerification().catch(() => null),
         ]);
         setUser(profileData);
         setWagers(wagersData);
+        setVerification(tierData);
       } catch (err) {
         console.error("Failed to load profile", err);
       } finally {
@@ -115,6 +118,18 @@ export default function ProfilePage() {
     };
   });
 
+  // Real tier data, or a conservative fallback when the call failed. Never
+  // invent a flattering default — an unknown tier is shown as the lowest one.
+  const tier: number = verification?.tier ?? 0;
+  const signals: Record<string, any> = verification?.signals ?? {};
+  const tierName = ["Newcomer", "Verified", "Trusted"][tier] ?? "Newcomer";
+  const tierHint =
+    tier >= 2
+      ? "Highest tier. No stake ceiling."
+      : tier === 1
+        ? "Settle 5 wagers against 3 different opponents to reach Trusted."
+        : "New account. Stakes are capped while you build a settlement record.";
+
   return (
     <div className="flex-1 flex flex-col">
       {/* Mobile sub-header */}
@@ -178,22 +193,58 @@ export default function ProfilePage() {
               </button>
             </div>
 
-            {/* Trust Score */}
+            {/*
+              Verification tier.
+
+              This panel used to read "Trust Score 94/100 — Excellent, Fair
+              player" for everybody: the 94, the bar width and the label were
+              all literals in this file. A brand-new account with no history
+              advertised itself as trustworthy, which on a app where strangers
+              stake real money at each other is worse than showing nothing.
+              What follows is the tier the server actually computed, the record
+              behind it, and what the next tier needs.
+            */}
             <div
               className="rounded-2xl p-5"
               style={{ background: "linear-gradient(135deg,#0d9488,#115e59)", boxShadow: "var(--shadow-md)" }}
             >
-              <div className="flex items-center justify-between mb-3">
+              <div className="flex items-start justify-between mb-3">
                 <div>
-                  <p className="text-white/70 text-[10px] font-semibold uppercase tracking-widest">Trust Score</p>
-                  <p className="text-white font-bold text-4xl mt-1">94<span className="text-white/60 text-xl">/100</span></p>
+                  <p className="text-white/70 text-[10px] font-semibold uppercase tracking-widest">
+                    Verification
+                  </p>
+                  <p className="text-white font-bold text-2xl mt-1">{tierName}</p>
                 </div>
-                <Shield className="h-12 w-12 text-white/30" />
+                <Shield className="h-10 w-10 text-white/30 shrink-0" />
               </div>
-              <div className="h-2.5 bg-white/20 rounded-full overflow-hidden mb-2">
-                <div className="h-full bg-white rounded-full" style={{ width: "94%" }} />
+
+              <div className="flex gap-1.5 mb-3" aria-hidden="true">
+                {[0, 1, 2].map((step) => (
+                  <div
+                    key={step}
+                    className={`h-1.5 flex-1 rounded-full ${step <= tier ? "bg-white" : "bg-white/20"}`}
+                  />
+                ))}
               </div>
-              <p className="text-white/60 text-[10px] font-semibold">Excellent — Fair player</p>
+
+              <dl className="text-white/80 text-[11px] space-y-1">
+                <div className="flex justify-between gap-2">
+                  <dt>Settled wagers</dt>
+                  <dd className="font-semibold text-white">{signals.settled ?? 0}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt>Distinct opponents</dt>
+                  <dd className="font-semibold text-white">{signals.distinctOpponents ?? 0}</dd>
+                </div>
+                <div className="flex justify-between gap-2">
+                  <dt>Wallet linked</dt>
+                  <dd className="font-semibold text-white">{signals.linkedWallet ? "Yes" : "No"}</dd>
+                </div>
+              </dl>
+
+              <p className="text-white/60 text-[10px] font-semibold mt-3 leading-relaxed">
+                {tierHint}
+              </p>
             </div>
           </div>
 
