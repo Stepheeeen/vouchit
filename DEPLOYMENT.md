@@ -242,6 +242,67 @@ break reads of every older document in exactly the way above.
 
 ---
 
+## 4c. Going live on usevouchit.com
+
+Everything below is already configured. Merging `web3-production` into `main`
+is the step that publishes, and it is a clean fast-forward.
+
+**Services**
+
+| | branch | auto-deploy | url |
+|---|---|---|---|
+| `vouchit-api` (production) | `main` | **off** | https://vouchit-api.onrender.com |
+| `vouchit-staging` | `web3-production` | on | https://vouchit-staging.onrender.com |
+| `vouchit` (old naira backend) | `main` | on | https://vouchit.onrender.com |
+
+`vouchit-api` is a new service rather than a reconfiguration of `vouchit`,
+for two reasons: the Render CLI cannot set environment variables on an
+existing service, and leaving the old one untouched means the live site keeps
+working until the moment you choose to cut over, with an obvious way back.
+
+Its configuration was proved by pointing it at `web3-production`, deploying,
+and running the API checks against it — 10/10, including CORS keyed to
+`https://www.usevouchit.com` — then switching it back to `main`.
+
+Auto-deploy is **off** on purpose. `main` still carries the old code, which
+has `backend/scratch` and a `tsconfig.build.json` that does not exclude it, so
+it emits `dist/src/main.js` and the `node dist/main.js` start command would
+fail. The merge brings the fix; until then an automatic build would only
+produce a red service.
+
+**Database:** `vouchit_web3`, empty and separate. The old `vouchit` database
+keeps the naira-era documents — its `Wager` rows have `amount`/`totalPot` as
+Float where this code expects String, so `GET /wagers` would throw against it.
+Nothing is deleted; it is simply not used.
+
+**Vercel Production** is already pointed at the new backend:
+`NEXT_PUBLIC_API_URL=https://vouchit-api.onrender.com`,
+`NEXT_PUBLIC_CHAIN=base`, `NEXT_PUBLIC_ESCROW_ADDRESS=0xc756…FD14`. Setting
+these did not redeploy anything; they apply to the next production build.
+
+**The cutover**
+
+```bash
+git checkout main && git merge --ff-only web3-production && git push origin main
+```
+
+Then, in order:
+
+1. Deploy `vouchit-api` (`render deploys create srv-dbptdfrrjlhs73b1vgbg --wait`),
+   or switch its auto-deploy on and let the push trigger it.
+2. Confirm `https://vouchit-api.onrender.com/wagers` answers 200.
+3. Confirm https://www.usevouchit.com serves the new build — the landing page
+   should no longer mention Paystack.
+4. Turn auto-deploy on for `vouchit-api` if you have not already.
+5. Suspend the old `vouchit` service once you are satisfied. Keep it suspended
+   rather than deleted for a while; it is the rollback.
+
+**Rolling back** means pointing `NEXT_PUBLIC_API_URL` back at the old service
+and reverting the merge. Nothing in the escrow contract is affected either
+way — it holds real money independently of which web server is running.
+
+---
+
 ## 5. Before mainnet
 
 - [ ] **Decide how the relayer key is held.** It owns the contract and is the

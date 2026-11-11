@@ -4,8 +4,27 @@ const isLocal = typeof window !== 'undefined'
   ? (window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')
   : process.env.NODE_ENV !== 'production';
 
-export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 
-  (isLocal ? 'http://localhost:3001' : 'https://vouchit.onrender.com');
+/**
+ * Where the API lives.
+ *
+ * The fallback used to be `https://vouchit.onrender.com` — the old naira
+ * backend — so a deploy that forgot NEXT_PUBLIC_API_URL did not fail, it
+ * quietly drove the wrong server. That host is now retired, and the fallback
+ * points at the current production API, but a missing variable is still a
+ * misconfiguration worth shouting about rather than papering over.
+ */
+const FALLBACK_API_URL = isLocal
+  ? 'http://localhost:3001'
+  : 'https://vouchit-api.onrender.com';
+
+if (typeof window !== 'undefined' && !process.env.NEXT_PUBLIC_API_URL) {
+  console.warn(
+    `[Vouchit] NEXT_PUBLIC_API_URL is not set for this build; falling back to ${FALLBACK_API_URL}. ` +
+      'If this is not the backend you expected, the deployment is misconfigured.',
+  );
+}
+
+export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || FALLBACK_API_URL;
 
 /**
  * How long to wait before giving up on the API.
