@@ -3,7 +3,8 @@
 import { useCallback } from "react";
 import { useAccount, useConfig } from "wagmi";
 import { readContract, writeContract, waitForTransactionReceipt } from "wagmi/actions";
-import { parseUnits, zeroAddress, type Hex } from "viem";
+import { parseUnits, zeroAddress, encodeFunctionData, type Hex } from "viem";
+import { useSponsoredCalls, type Call } from "./useSponsoredCalls";
 import { escrowAbi, erc20Abi } from "./escrowAbi";
 import { ESCROW_ADDRESS, isEscrowConfigured } from "./config";
 import { isNativeToken, type StakeToken } from "./tokens";
@@ -35,7 +36,7 @@ const APPROVAL_BATCH_MULTIPLE = 10n;
 export type EscrowProgress =
   | { step: "approving"; hash?: Hex }
   | { step: "awaiting-approval"; hash: Hex }
-  | { step: "signing"; hash?: Hex }
+  | { step: "signing"; hash?: Hex; sponsored?: boolean; batched?: boolean }
   | { step: "confirming"; hash: Hex };
 
 export interface CreateWagerArgs {
@@ -87,6 +88,7 @@ async function ensureAllowance(
 export function useEscrow() {
   const config = useConfig();
   const { address } = useAccount();
+  const { isSponsored, canBatch, sendBatch } = useSponsoredCalls();
 
   const requireReady = useCallback(() => {
     if (!isEscrowConfigured()) {
@@ -116,6 +118,46 @@ export function useEscrow() {
       const durationSeconds = BigInt(expiryDays * 24 * 60 * 60);
       const native = isNativeToken(token.address);
 
+      const escrowCall: Call = {
+        to: ESCROW_ADDRESS,
+        data: encodeFunctionData({
+          abi: escrowAbi,
+          functionName: "createWager",
+          args: [wagerId, challenger ?? zeroAddress, token.address, stakeAmount, durationSeconds],
+        }),
+        value: native ? stakeAmount : 0n,
+      };
+
+      // One prompt, and no ETH needed, when the wallet is a smart account.
+      // The approval rides along in the same atomic operation instead of
+      // being a separate transaction the user pays for and waits on.
+      if (canBatch) {
+        const calls: Call[] = [];
+        if (!native) {
+          const allowance = await readContract(config, {
+            abi: erc20Abi,
+            address: token.address,
+            functionName: "allowance",
+            args: [owner, ESCROW_ADDRESS],
+          });
+          if (allowance < stakeAmount) {
+            calls.push({
+              to: token.address,
+              data: encodeFunctionData({
+                abi: erc20Abi,
+                functionName: "approve",
+                args: [ESCROW_ADDRESS, stakeAmount * APPROVAL_BATCH_MULTIPLE],
+              }),
+            });
+          }
+        }
+        calls.push(escrowCall);
+
+        onProgress?.({ step: "signing", sponsored: isSponsored, batched: calls.length > 1 });
+        const { txHash } = await sendBatch(calls);
+              return { wagerId, txHash: txHash ?? ("0x" as Hex), stakeAmount };
+      }
+
       if (!native) {
         await ensureAllowance(config, owner, token, stakeAmount, onProgress);
       }
@@ -137,7 +179,7 @@ export function useEscrow() {
 
       return { wagerId, txHash: hash, stakeAmount };
     },
-    [config, requireReady],
+    [config, requireReady, canBatch, isSponsored, sendBatch],
   );
 
   /** Match the creator's stake and activate the wager. */
@@ -153,7 +195,45 @@ export function useEscrow() {
       });
       const stakeAmount = onChain[4];
 
-      if (!isNativeToken(token.address)) {
+      const native = isNativeToken(token.address);
+      const joinCall: Call = {
+        to: ESCROW_ADDRESS,
+        data: encodeFunctionData({ abi: escrowAbi, functionName: "joinWager", args: [wagerId] }),
+        value: native ? stakeAmount : 0n,
+      };
+
+      // Joining deserves this more than creating does: the person accepting a
+      // wager is often brand new, arriving from a shared link, and asking
+      // them to acquire ETH for gas before they can take a bet is where they
+      // leave.
+      if (canBatch) {
+        const calls: Call[] = [];
+        if (!native) {
+          const allowance = await readContract(config, {
+            abi: erc20Abi,
+            address: token.address,
+            functionName: "allowance",
+            args: [owner, ESCROW_ADDRESS],
+          });
+          if (allowance < stakeAmount) {
+            calls.push({
+              to: token.address,
+              data: encodeFunctionData({
+                abi: erc20Abi,
+                functionName: "approve",
+                args: [ESCROW_ADDRESS, stakeAmount * APPROVAL_BATCH_MULTIPLE],
+              }),
+            });
+          }
+        }
+        calls.push(joinCall);
+
+        onProgress?.({ step: "signing", sponsored: isSponsored, batched: calls.length > 1 });
+        const { txHash } = await sendBatch(calls);
+        return { txHash: txHash ?? ("0x" as Hex), stakeAmount };
+      }
+
+      if (!native) {
         await ensureAllowance(config, owner, token, stakeAmount, onProgress);
       }
 
@@ -163,7 +243,7 @@ export function useEscrow() {
         address: ESCROW_ADDRESS,
         functionName: "joinWager",
         args: [wagerId],
-        value: isNativeToken(token.address) ? stakeAmount : 0n,
+        value: native ? stakeAmount : 0n,
       });
 
       onProgress?.({ step: "confirming", hash });
@@ -205,8 +285,18 @@ export function useEscrow() {
       await waitForTransactionReceipt(config, { hash });
       return { txHash: hash };
     },
-    [config, requireReady],
+    [config, requireReady, canBatch, isSponsored, sendBatch],
   );
 
-  return { createWager, joinWager, voteWinner, openDispute, isReady: isEscrowConfigured() && !!address };
+  return {
+    createWager,
+    joinWager,
+    voteWinner,
+    openDispute,
+    isReady: isEscrowConfigured() && !!address,
+    /** True when this wallet's network fee will actually be covered. */
+    isSponsored,
+    /** True when approval and stake can go in a single prompt. */
+    canBatch,
+  };
 }

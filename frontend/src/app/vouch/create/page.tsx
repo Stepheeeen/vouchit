@@ -29,7 +29,7 @@ const CATEGORIES = [
 export default function CreateVouchPage() {
   const router = useRouter();
   const { account, isConnected, isCorrectChain, isConnecting, connectWallet } = useWeb3();
-  const { createWager } = useEscrow();
+  const { createWager, isSponsored } = useEscrow();
 
   const tokens = getTokens(ACTIVE_CHAIN.id);
   const [tokenAddress, setTokenAddress] = useState(tokens[0]?.address ?? "");
@@ -117,7 +117,10 @@ export default function CreateVouchPage() {
   // Enough native coin to pay for a transaction at all. Base fees are tiny;
   // this is a floor to catch a wallet holding literally nothing.
   const GAS_FLOOR = 20_000_000_000_000n; // 0.00002 ETH
-  const hasGas = gas.value === null ? true : gas.value >= GAS_FLOOR;
+  // When a paymaster covers the fee the user needs no ETH whatsoever, so
+  // demanding a gas balance would block the very people the sponsorship is
+  // meant to help.
+  const hasGas = isSponsored || gas.value === null ? true : gas.value >= GAS_FLOOR;
 
   const isStakeValid =
     stakeAmount !== null && token !== undefined && !isBelowMin && !isAboveCap && hasBalance;
@@ -213,7 +216,14 @@ export default function CreateVouchPage() {
       case "awaiting-approval":
         return "Waiting for the approval to confirm on Base…";
       case "signing":
-        return "Confirm the stake in your wallet…";
+        if (progress.batched) {
+          return progress.sponsored
+            ? "Approve once in your wallet — we're covering the network fee."
+            : "Confirm once in your wallet — approval and stake together.";
+        }
+        return progress.sponsored
+          ? "Confirm in your wallet — we're covering the network fee."
+          : "Confirm the stake in your wallet…";
       case "confirming":
         return "Locking your stake in escrow…";
     }
@@ -403,6 +413,11 @@ export default function CreateVouchPage() {
                 <span className="text-xs font-semibold text-[var(--danger)]">
                   You have no ETH on Base to pay the network fee. You need a small amount
                   even when staking USDC.
+                </span>
+              )}
+              {isSponsored && (
+                <span className="text-xs font-semibold text-[var(--success)]">
+                  Network fees are on us — you don&apos;t need any ETH.
                 </span>
               )}
               {stake && isAboveCap && (

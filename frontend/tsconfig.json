@@ -6,6 +6,9 @@
     "skipLibCheck": true,
     "strict": true,
     "noEmit": true,
+    // Lets a Node test import "./x.ts" explicitly, which Node's ESM
+    // resolver requires. Safe here because nothing is emitted.
+    "allowImportingTsExtensions": true,
     "esModuleInterop": true,
     "module": "esnext",
     "moduleResolution": "bundler",
