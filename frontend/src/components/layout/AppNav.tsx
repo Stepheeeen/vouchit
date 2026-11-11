@@ -321,6 +321,101 @@ export default function AppNav() {
         </div>
       </header>
 
+      {/* ── MOBILE TOP BAR (< md) ────────────────────────── */}
+      {/* There was no header at all on mobile, so notifications, settings and
+          the wallet connect — all of which live in the desktop header — were
+          simply unreachable on a phone. The bottom bar only carries the five
+          primary routes. */}
+      <header className="md:hidden sticky top-0 z-30 w-full bg-white/90 backdrop-blur-md border-b border-[var(--border)] flex items-center justify-between px-4 py-2.5">
+        <Link href="/dashboard" className="flex items-center">
+          <img src="/logo-full-colored.png" alt="Vouchit" className="h-7 w-auto object-contain" />
+        </Link>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={linkWalletToBackend}
+            disabled={isConnecting}
+            aria-label={user?.web3Address ? "Wallet linked" : "Connect wallet"}
+            className="h-9 w-9 rounded-full bg-[var(--muted)] flex items-center justify-center"
+          >
+            <Link2
+              className={`h-4 w-4 ${
+                user?.web3Address ? "text-emerald-500" : isConnected ? "text-amber-500" : "text-slate-400"
+              }`}
+            />
+          </button>
+          <button
+            onClick={() => setShowNotifications(!showNotifications)}
+            aria-label="Notifications"
+            className="relative h-9 w-9 rounded-full bg-[var(--muted)] flex items-center justify-center"
+          >
+            <Bell className="h-4 w-4 text-[var(--muted-foreground)]" />
+            {unreadCount > 0 && (
+              <span className="absolute -top-0.5 -right-0.5 h-4 min-w-[1rem] px-1 rounded-full bg-[var(--danger)] text-white text-[9px] font-bold flex items-center justify-center">
+                {unreadCount > 9 ? "9+" : unreadCount}
+              </span>
+            )}
+          </button>
+          <Link href="/settings" aria-label="Settings">
+            <span className="h-9 w-9 rounded-full bg-[var(--muted)] flex items-center justify-center">
+              <Settings className="h-4 w-4 text-[var(--muted-foreground)]" />
+            </span>
+          </Link>
+        </div>
+      </header>
+
+      {/* Mobile notifications sheet. The desktop dropdown lives inside the
+          `hidden md:flex` header, so on a phone the bell would toggle state
+          and show nothing at all. */}
+      {showNotifications && (
+        <div className="md:hidden fixed inset-0 z-50 flex flex-col">
+          <button
+            aria-label="Close notifications"
+            className="absolute inset-0 bg-black/30"
+            onClick={() => setShowNotifications(false)}
+          />
+          <div className="relative mt-auto bg-white rounded-t-2xl max-h-[70vh] flex flex-col">
+            <div className="p-4 border-b border-[var(--border)] flex items-center justify-between">
+              <span className="font-bold text-sm">Notifications</span>
+              {unreadCount > 0 && (
+                <button onClick={handleMarkAllRead} className="text-xs font-semibold text-[var(--primary)]">
+                  Mark all read
+                </button>
+              )}
+            </div>
+            <div className="overflow-y-auto divide-y divide-[var(--border)]">
+              {notifications.length === 0 ? (
+                <p className="p-8 text-center text-xs text-[var(--muted-foreground)] font-semibold">
+                  No notifications yet
+                </p>
+              ) : (
+                notifications.map((n) => (
+                  <button
+                    key={n.id}
+                    onClick={() => {
+                      if (!n.readAt) handleMarkRead(n.id);
+                    }}
+                    className={`w-full p-4 text-left ${!n.readAt ? "bg-[var(--primary)]/[0.04]" : ""}`}
+                  >
+                    <p className={`text-xs leading-relaxed ${!n.readAt ? "font-bold" : "text-neutral-600"}`}>
+                      {n.message}
+                    </p>
+                    <p className="text-[10px] text-[var(--muted-foreground)] mt-1">
+                      {new Date(n.createdAt).toLocaleDateString("en-US", { month: "short", day: "numeric" })}
+                    </p>
+                  </button>
+                ))
+              )}
+            </div>
+            <button
+              onClick={() => setShowNotifications(false)}
+              className="p-4 border-t border-[var(--border)] text-sm font-semibold"
+            >
+              Close
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* ── MOBILE BOTTOM NAV (< md) ─────────────────────── */}
       {/* Height is pinned to --mobile-nav-h so bottom-anchored page elements
           can offset themselves by exactly this and stop being covered. */}

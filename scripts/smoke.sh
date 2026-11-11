@@ -211,6 +211,43 @@ ORIGIN_BAD=$(curl -s -o /dev/null -D - -H "Origin: https://evil.example" "$API/w
   && pass "POST /wagers rejects unauthenticated callers" \
   || fail "POST /wagers did not require auth"
 
+# The API advertised its stack and shipped no security headers at all.
+HDRS=$(curl -s -o /dev/null -D - "$API/wagers")
+echo "$HDRS" | grep -qi "x-powered-by" \
+  && fail "API still advertises x-powered-by" \
+  || pass "no x-powered-by header"
+echo "$HDRS" | grep -qi "x-content-type-options" \
+  && pass "X-Content-Type-Options is set" \
+  || fail "X-Content-Type-Options missing"
+
+# A one-character password was accepted on an app guarding real money.
+WEAK=$(curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"email":"smoke-weak@example.com","password":"a"}' "$API/auth/register")
+echo "$WEAK" | grep -qi "at least" \
+  && pass "register refuses a one-character password" \
+  || fail "register accepted a weak password: $WEAK"
+
+# register answered differently for known and unknown addresses, which turned
+# signup into a user-directory oracle.
+R1=$(curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"email":"smoke-enum-a@example.com","password":"Correct-Horse-9"}' "$API/auth/register")
+R2=$(curl -s -X POST -H 'Content-Type: application/json' \
+  -d '{"email":"smoke-enum-a@example.com","password":"Correct-Horse-9"}' "$API/auth/register")
+[ "$R1" = "$R2" ] \
+  && pass "register answers identically for a new and an existing address" \
+  || fail "register leaks whether an address is registered"
+
+# Nothing was rate limited: twenty wrong codes in a row all answered 401.
+LIMITED=0
+for _ in $(seq 1 14); do
+  RC=$(code -X POST -H 'Content-Type: application/json' \
+    -d '{"email":"smoke-enum-a@example.com","otp":"000000"}' "$API/auth/verify-email")
+  [ "$RC" = 429 ] && { LIMITED=1; break; }
+done
+[ "$LIMITED" = 1 ] \
+  && pass "repeated wrong verification codes get rate limited (429)" \
+  || fail "no rate limit on /auth/verify-email after 14 wrong codes"
+
 # ----------------------------------------------------------------------- web
 step "Web"
 (cd "$ROOT/frontend" && \
@@ -227,7 +264,8 @@ for _ in $(seq 1 ${SMOKE_WAIT:-300}); do
 done
 
 WEB="http://127.0.0.1:$WEB_PORT"
-for page in /auth/login /dashboard /explore /leaderboard /wallet /settings /vouch/create; do
+for page in /auth/login /auth/forgot-password /dashboard /explore /leaderboard /wallet /settings \
+            /vouch/create /legal/terms /legal/privacy /legal/responsible-play; do
   STATUS=$(code "$WEB$page")
   # Authenticated pages render a client-side shell and redirect in the browser,
   # so 200 and 3xx are both healthy; 500 is an SSR crash.
