@@ -10,6 +10,8 @@ import { ACTIVE_CHAIN } from "@/lib/web3/config";
 import { getTokens, isNativeToken } from "@/lib/web3/tokens";
 import { erc20Abi } from "@/lib/web3/escrowAbi";
 import { formatStakeCompact, formatStake, applyProtocolFee, sumByToken, formatEarnings } from "@/lib/web3/format";
+import { AddFunds } from "@/components/wallet/AddFunds";
+import { useUsdPrice, toUsd } from "@/lib/web3/useWalletMoney";
 
 /** Balance row for one supported stake token. */
 function TokenBalance({ token }: { token: ReturnType<typeof getTokens>[number] }) {
@@ -33,6 +35,8 @@ function TokenBalance({ token }: { token: ReturnType<typeof getTokens>[number] }
 
   const value = native ? nativeBalance.data?.value : (erc20Balance.data as bigint | undefined);
   const isLoading = native ? nativeBalance.isLoading : erc20Balance.isLoading;
+  const usdPrice = useUsdPrice(token.symbol);
+  const usd = toUsd(value ?? 0n, token.decimals, usdPrice);
 
   return (
     <div className="flex items-center justify-between py-4 border-b border-[var(--border)] last:border-b-0">
@@ -42,13 +46,18 @@ function TokenBalance({ token }: { token: ReturnType<typeof getTokens>[number] }
           {token.name}
         </p>
       </div>
-      <p className="font-bold text-lg tracking-tight">
-        {isLoading ? (
-          <Loader2 className="h-4 w-4 animate-spin text-[var(--muted-foreground)]" />
-        ) : (
-          formatStakeCompact(value ?? 0n, { tokenSymbol: token.symbol, tokenDecimals: token.decimals })
+      <div className="text-right">
+        <p className="font-bold text-lg tracking-tight">
+          {isLoading ? (
+            <Loader2 className="h-4 w-4 animate-spin text-[var(--muted-foreground)]" />
+          ) : (
+            formatStakeCompact(value ?? 0n, { tokenSymbol: token.symbol, tokenDecimals: token.decimals })
+          )}
+        </p>
+        {!isLoading && usd && (
+          <p className="text-[11px] font-semibold text-[var(--muted-foreground)]">about {usd}</p>
         )}
-      </p>
+      </div>
     </div>
   );
 }
@@ -209,6 +218,10 @@ export default function WalletPage() {
             </div>
           </div>
         )}
+
+        {/* Money in and out. Neither existed: a funded-from-nowhere wallet
+            was the user's problem to solve, unaided. */}
+        {isConnected && account && <AddFunds address={account} />}
 
         {/* Balances */}
         {isConnected && (

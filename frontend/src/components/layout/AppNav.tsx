@@ -79,10 +79,25 @@ export default function AppNav() {
         const profile = await userApi.getProfile();
         setUser(profile);
         setAuthState("in");
-      } catch {
-        // A 401 here is the normal case for a signed-out visitor on a public
-        // page, not an error worth logging.
-        setAuthState("out");
+      } catch (err: any) {
+        // Only an actual rejection of the session means signed out. Treating
+        // every failure that way — a timeout on a cold backend, a CORS
+        // refusal, a 500 — logged people out of the UI while their session
+        // was perfectly valid, replacing the whole app chrome with "Log in /
+        // Sign up" on a page they were entitled to see.
+        const message = String(err?.message ?? "");
+        const sessionRejected =
+          /401|unauthor|signed out|session/i.test(message) && !/could not reach|took too long/i.test(message);
+        if (sessionRejected) {
+          setAuthState("out");
+        } else {
+          // Unknown: keep whatever a cookie suggests rather than guessing.
+          const hasCookie =
+            typeof document !== "undefined" && document.cookie.includes("vouchit_token=");
+          setAuthState(hasCookie ? "in" : "out");
+          if (!hasCookie) return;
+          console.warn("[Vouchit] Could not load your profile:", message);
+        }
       }
     };
     load();

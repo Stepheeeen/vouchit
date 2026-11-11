@@ -2,13 +2,14 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowLeft, ArrowRight, Info, AlertCircle, Wallet } from "lucide-react";
+import { ArrowLeft, ArrowRight, Info, AlertCircle, Wallet, Loader2 } from "lucide-react";
 import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useWeb3 } from "@/context/Web3Context";
-import { useEscrow } from "@/lib/web3/useEscrow";
+import { useEscrow, type EscrowProgress } from "@/lib/web3/useEscrow";
 import { getTokens } from "@/lib/web3/tokens";
+import { useTokenBalance, useGasBalance, useUsdPrice, toUsd } from "@/lib/web3/useWalletMoney";
 import { ACTIVE_CHAIN, isEscrowConfigured } from "@/lib/web3/config";
 import { formatUnits, parseUnits, isAddress, zeroAddress } from "viem";
 
@@ -44,6 +45,10 @@ export default function CreateVouchPage() {
   const [verification, setVerification] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState("");
+  // The flow is up to three transactions with mining waits between them. It
+  // used to report a single sentence and then go quiet, so the honest read
+  // from the user's side was that it had hung.
+  const [progress, setProgress] = useState<EscrowProgress | null>(null);
   const [error, setError] = useState("");
 
   // The tier decides the stake ceiling. Fetched up front so the limit can be
@@ -71,6 +76,10 @@ export default function CreateVouchPage() {
     [tokens, tokenAddress],
   );
 
+  const balance = useTokenBalance(token);
+  const gas = useGasBalance();
+  const usdPrice = useUsdPrice(token?.symbol);
+
   /** Parsed stake in base units, or null when the input isn't a valid amount. */
   const stakeAmount = useMemo(() => {
     if (!stake || !token) return null;
@@ -94,7 +103,24 @@ export default function CreateVouchPage() {
 
   const isAboveCap = stakeAmount !== null && maxStake !== null && stakeAmount > maxStake;
   const isBelowMin = stakeAmount !== null && token !== undefined && stakeAmount < token.minStake;
-  const isStakeValid = stakeAmount !== null && token !== undefined && !isBelowMin && !isAboveCap;
+
+  /**
+   * Can this wallet actually pay?
+   *
+   * Two separate ways to be short, and the app checked neither — it let you
+   * fill the form, sign, and learn from the wallet's own rejection. For a
+   * native-coin stake the gas comes out of the same balance, so the stake
+   * alone being affordable is not enough.
+   */
+  const hasBalance =
+    balance.value === null || stakeAmount === null ? true : balance.value >= stakeAmount;
+  // Enough native coin to pay for a transaction at all. Base fees are tiny;
+  // this is a floor to catch a wallet holding literally nothing.
+  const GAS_FLOOR = 20_000_000_000_000n; // 0.00002 ETH
+  const hasGas = gas.value === null ? true : gas.value >= GAS_FLOOR;
+
+  const isStakeValid =
+    stakeAmount !== null && token !== undefined && !isBelowMin && !isAboveCap && hasBalance;
   const isDescValid = description.length >= 10 && description.length <= 280;
 
   const opponentTrimmed = opponent.trim();
@@ -102,9 +128,10 @@ export default function CreateVouchPage() {
   const isOpenWager = opponentTrimmed === "";
 
   const isValid =
-    isStakeValid && isDescValid && isOpponentValid && isConnected && isCorrectChain;
+    isStakeValid && isDescValid && isOpponentValid && isConnected && isCorrectChain && hasGas;
 
   const minStakeLabel = token ? `${formatUnits(token.minStake, token.decimals)} ${token.symbol}` : "";
+  const stakeUsd = toUsd(stakeAmount, token?.decimals ?? 18, usdPrice);
   const maxStakeLabel =
     token && maxStake !== null ? `${formatUnits(maxStake, token.decimals)} ${token.symbol}` : null;
 
@@ -126,6 +153,8 @@ export default function CreateVouchPage() {
     if (stakeAmount === null) return "Enter a stake amount.";
     if (isBelowMin) return `Minimum stake is ${minStakeLabel}.`;
     if (isAboveCap) return `Your tier allows stakes up to ${maxStakeLabel}.`;
+    if (!hasBalance) return `Not enough ${token?.symbol}. Add funds from your wallet page.`;
+    if (!hasGas) return "You need a little ETH on Base to pay the network fee.";
     if (!isOpponentValid) return "That opponent address is not a valid wallet address.";
     return null;
   })();
@@ -145,6 +174,7 @@ export default function CreateVouchPage() {
         token,
         stake,
         expiryDays: Number(expiryDays),
+        onProgress: setProgress,
         // The chain is what actually restricts who may join; the API mirrors
         // this value rather than trusting a separate client field.
         challenger: isOpenWager ? zeroAddress : (opponentTrimmed as `0x${string}`),
@@ -170,8 +200,28 @@ export default function CreateVouchPage() {
     } finally {
       setIsLoading(false);
       setStatus("");
+      setProgress(null);
     }
   };
+
+  /** Plain-language account of which transaction is in flight. */
+  const progressLabel = (() => {
+    if (!progress) return null;
+    switch (progress.step) {
+      case "approving":
+        return `Approve ${token?.symbol} in your wallet — this lets the escrow move your stake.`;
+      case "awaiting-approval":
+        return "Waiting for the approval to confirm on Base…";
+      case "signing":
+        return "Confirm the stake in your wallet…";
+      case "confirming":
+        return "Locking your stake in escrow…";
+    }
+  })();
+
+  const progressHash = progress && "hash" in progress ? progress.hash : undefined;
+  const explorerBase =
+    ACTIVE_CHAIN.id === 8453 ? "https://basescan.org/tx/" : "https://sepolia.basescan.org/tx/";
 
   const potPreview = () => {
     if (!token || stakeAmount === null) return null;
@@ -308,12 +358,52 @@ export default function CreateVouchPage() {
                   {token?.symbol}
                 </span>
               </div>
+              {/* What you hold, what this costs in money people think in, and
+                  a one-tap Max. The stake field previously showed none of it,
+                  so you typed a number blind and found out at signing time. */}
+              <div className="flex items-center justify-between gap-3 text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">
+                <span>
+                  Balance{" "}
+                  {balance.isLoading
+                    ? "…"
+                    : balance.value === null
+                      ? "—"
+                      : `${formatUnits(balance.value, token?.decimals ?? 18)} ${token?.symbol ?? ""}`}
+                </span>
+                {balance.value !== null && balance.value > 0n && token && (
+                  <button
+                    type="button"
+                    onClick={() => setStake(formatUnits(balance.value!, token.decimals))}
+                    className="underline underline-offset-2 hover:text-[var(--foreground)] transition-colors"
+                  >
+                    Use max
+                  </button>
+                )}
+              </div>
               <div className="flex justify-between gap-3 text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">
-                <span>Min {minStakeLabel}</span>
+                <span>
+                  Min {minStakeLabel}
+                  {stakeUsd && <span className="normal-case"> · about {stakeUsd}</span>}
+                </span>
                 {maxStakeLabel && <span>Your limit {maxStakeLabel}</span>}
               </div>
               {stake && isBelowMin && (
                 <span className="text-xs font-semibold text-[var(--danger)]">Minimum stake is {minStakeLabel}.</span>
+              )}
+              {stake && !hasBalance && (
+                <span className="text-xs font-semibold text-[var(--danger)]">
+                  That is more {token?.symbol} than this wallet holds. Add funds from the{" "}
+                  <Link href="/wallet" className="underline">wallet page</Link>.
+                </span>
+              )}
+              {!hasGas && (
+                // Holding USDC and no ETH is a real and confusing dead end:
+                // every Base transaction is paid for in ETH, so the stake
+                // being affordable is not sufficient on its own.
+                <span className="text-xs font-semibold text-[var(--danger)]">
+                  You have no ETH on Base to pay the network fee. You need a small amount
+                  even when staking USDC.
+                </span>
               )}
               {stake && isAboveCap && (
                 // Caught here rather than after the escrow transaction, which
@@ -442,6 +532,29 @@ export default function CreateVouchPage() {
               <option value="365">1 Year</option>
             </select>
           </section>
+
+          {/* Live transaction progress */}
+          {isLoading && progressLabel && (
+            <section className="flex items-start gap-3 p-4 border border-[var(--foreground)] bg-[var(--muted)]/20 text-sm font-semibold">
+              <Loader2 className="h-5 w-5 shrink-0 mt-0.5 animate-spin" />
+              <div className="flex flex-col gap-1">
+                <span>{progressLabel}</span>
+                {progressHash && (
+                  <a
+                    href={`${explorerBase}${progressHash}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="text-[10px] font-semibold uppercase tracking-widest underline underline-offset-2 text-[var(--muted-foreground)]"
+                  >
+                    View on Basescan
+                  </a>
+                )}
+                <span className="text-[10px] font-medium normal-case text-[var(--muted-foreground)]">
+                  Keep this page open until it finishes.
+                </span>
+              </div>
+            </section>
+          )}
 
           {/* Summary */}
           {preview && isDescValid && token && (

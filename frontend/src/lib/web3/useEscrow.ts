@@ -15,6 +15,29 @@ function newWagerId(): Hex {
   return `0x${Array.from(bytes, (b) => b.toString(16).padStart(2, "0")).join("")}` as Hex;
 }
 
+/**
+ * How much ERC20 spend to approve at once.
+ *
+ * The approval was for exactly the stake, so the allowance was spent down to
+ * zero by every wager and the next one needed another approval — making a
+ * USDC wager two signatures and two confirmations, every single time. Granting
+ * a batch means the second and subsequent wagers are one signature.
+ *
+ * Deliberately NOT an unlimited approval. The escrow has not been audited by a
+ * third party, and an infinite allowance would let a bug in it reach every
+ * token the user holds, forever. A bounded multiple keeps the blast radius to
+ * roughly what someone would wager in a sitting while still removing the
+ * repeat prompt.
+ */
+const APPROVAL_BATCH_MULTIPLE = 10n;
+
+/** Steps the UI can report while a multi-transaction flow runs. */
+export type EscrowProgress =
+  | { step: "approving"; hash?: Hex }
+  | { step: "awaiting-approval"; hash: Hex }
+  | { step: "signing"; hash?: Hex }
+  | { step: "confirming"; hash: Hex };
+
 export interface CreateWagerArgs {
   token: StakeToken;
   /** Human-entered stake, e.g. "25" for 25 USDC. */
@@ -22,6 +45,43 @@ export interface CreateWagerArgs {
   expiryDays: number;
   /** Optional targeted opponent; open to anyone when omitted. */
   challenger?: `0x${string}`;
+  /** Called as the flow moves between transactions. */
+  onProgress?: (p: EscrowProgress) => void;
+}
+
+/**
+ * Make sure the escrow may move `needed` of this token, approving a batch if
+ * not. Returns without a transaction when the existing allowance covers it,
+ * which is the point: a repeat wager costs one signature, not two.
+ */
+async function ensureAllowance(
+  config: ReturnType<typeof useConfig>,
+  owner: `0x${string}`,
+  token: StakeToken,
+  needed: bigint,
+  onProgress?: (p: EscrowProgress) => void,
+) {
+  const allowance = await readContract(config, {
+    abi: erc20Abi,
+    address: token.address,
+    functionName: "allowance",
+    args: [owner, ESCROW_ADDRESS],
+  });
+  if (allowance >= needed) return;
+
+  const batch = needed * APPROVAL_BATCH_MULTIPLE;
+  onProgress?.({ step: "approving" });
+  const approvalHash = await writeContract(config, {
+    abi: erc20Abi,
+    address: token.address,
+    functionName: "approve",
+    args: [ESCROW_ADDRESS, batch],
+  });
+  onProgress?.({ step: "awaiting-approval", hash: approvalHash });
+  const receipt = await waitForTransactionReceipt(config, { hash: approvalHash });
+  if (receipt.status !== "success") {
+    throw new Error(`Approving ${token.symbol} failed. Nothing has been staked.`);
+  }
 }
 
 export function useEscrow() {
@@ -44,7 +104,7 @@ export function useEscrow() {
    * backend's verifyOnChainWager always finds a real, funded wager.
    */
   const createWager = useCallback(
-    async ({ token, stake, expiryDays, challenger }: CreateWagerArgs) => {
+    async ({ token, stake, expiryDays, challenger, onProgress }: CreateWagerArgs) => {
       const owner = requireReady();
       const stakeAmount = parseUnits(stake, token.decimals);
 
@@ -57,23 +117,10 @@ export function useEscrow() {
       const native = isNativeToken(token.address);
 
       if (!native) {
-        const allowance = await readContract(config, {
-          abi: erc20Abi,
-          address: token.address,
-          functionName: "allowance",
-          args: [owner, ESCROW_ADDRESS],
-        });
-        if (allowance < stakeAmount) {
-          const approvalHash = await writeContract(config, {
-            abi: erc20Abi,
-            address: token.address,
-            functionName: "approve",
-            args: [ESCROW_ADDRESS, stakeAmount],
-          });
-          await waitForTransactionReceipt(config, { hash: approvalHash });
-        }
+        await ensureAllowance(config, owner, token, stakeAmount, onProgress);
       }
 
+      onProgress?.({ step: "signing" });
       const hash = await writeContract(config, {
         abi: escrowAbi,
         address: ESCROW_ADDRESS,
@@ -82,6 +129,7 @@ export function useEscrow() {
         value: native ? stakeAmount : 0n,
       });
 
+      onProgress?.({ step: "confirming", hash });
       const receipt = await waitForTransactionReceipt(config, { hash });
       if (receipt.status !== "success") {
         throw new Error("The escrow transaction failed on-chain.");
@@ -94,7 +142,7 @@ export function useEscrow() {
 
   /** Match the creator's stake and activate the wager. */
   const joinWager = useCallback(
-    async (wagerId: Hex, token: StakeToken) => {
+    async (wagerId: Hex, token: StakeToken, onProgress?: (p: EscrowProgress) => void) => {
       const owner = requireReady();
 
       const onChain = await readContract(config, {
@@ -106,23 +154,10 @@ export function useEscrow() {
       const stakeAmount = onChain[4];
 
       if (!isNativeToken(token.address)) {
-        const allowance = await readContract(config, {
-          abi: erc20Abi,
-          address: token.address,
-          functionName: "allowance",
-          args: [owner, ESCROW_ADDRESS],
-        });
-        if (allowance < stakeAmount) {
-          const approvalHash = await writeContract(config, {
-            abi: erc20Abi,
-            address: token.address,
-            functionName: "approve",
-            args: [ESCROW_ADDRESS, stakeAmount],
-          });
-          await waitForTransactionReceipt(config, { hash: approvalHash });
-        }
+        await ensureAllowance(config, owner, token, stakeAmount, onProgress);
       }
 
+      onProgress?.({ step: "signing" });
       const hash = await writeContract(config, {
         abi: escrowAbi,
         address: ESCROW_ADDRESS,
@@ -131,6 +166,7 @@ export function useEscrow() {
         value: isNativeToken(token.address) ? stakeAmount : 0n,
       });
 
+      onProgress?.({ step: "confirming", hash });
       const receipt = await waitForTransactionReceipt(config, { hash });
       if (receipt.status !== "success") {
         throw new Error("The join transaction failed on-chain.");

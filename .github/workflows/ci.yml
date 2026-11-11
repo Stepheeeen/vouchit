@@ -25,6 +25,8 @@ jobs:
       # node and no RPC credentials are needed.
       - name: Lifecycle end-to-end
         run: npx hardhat run script/e2e.ts
+      - name: Money path (ERC20 + native, exact balances)
+        run: npx hardhat run script/money-e2e.ts
       - name: ABI compatibility with backend and frontend
         run: npx hardhat run script/abi-compat.ts
 
