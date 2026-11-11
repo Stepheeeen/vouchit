@@ -53,11 +53,21 @@ export default function ExplorePage() {
     load();
   }, []);
 
+  /** "SPORTS" from the API becomes "Sports" to match the filter chips. */
+  const titleCase = (value: string) =>
+    value.charAt(0).toUpperCase() + value.slice(1).toLowerCase();
+
   const enriched = wagers.map((w) => ({
     ...w,
-    category: guessCategory(w.description),
-    creatorName: w.creator?.displayName || w.creator?.email?.split("@")[0] || "Unknown",
-    initials: (w.creator?.displayName || w.creator?.email || "?").charAt(0).toUpperCase(),
+    // Prefer the category the creator actually chose. The keyword guess is
+    // kept only for wagers made before the field existed — and before that,
+    // guessing was all there was, so the six filter chips matched whatever
+    // the heuristic happened to decide rather than what anyone intended.
+    category:
+      w.category && w.category !== "OTHER" ? titleCase(w.category) : guessCategory(w.description),
+    creatorName:
+      w.creator?.displayName || w.creator?.username || "Vouchit user",
+    initials: (w.creator?.displayName || w.creator?.username || "?").charAt(0).toUpperCase(),
   }));
 
   const filtered = enriched.filter((w) =>

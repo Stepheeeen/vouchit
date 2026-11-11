@@ -1,20 +1,51 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import Link from "next/link";
+import { useRouter, useSearchParams } from "next/navigation";
 import { ArrowRight, Check, Eye, EyeOff, AlertCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
-export default function LoginPage() {
+/** Mirrors the server rule in AuthService.assertPasswordAcceptable. */
+const MIN_PASSWORD_LENGTH = 10;
+
+function passwordProblem(password: string): string | null {
+  if (password.length < MIN_PASSWORD_LENGTH) {
+    return `Use at least ${MIN_PASSWORD_LENGTH} characters.`;
+  }
+  const classes = [/[a-z]/, /[A-Z]/, /[0-9]/, /[^A-Za-z0-9]/].filter((re) => re.test(password));
+  if (classes.length < 2) return "Mix at least two of: lowercase, uppercase, numbers, symbols.";
+  return null;
+}
+
+function LoginContent() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
+  // Sign-up used to be a toggle with no URL of its own, so it could not be
+  // linked to or shared and the back button did nothing useful. ?mode=signup
+  // gives it an address while keeping the single-card layout.
   const [isLogin, setIsLogin] = useState(true);
   const [isOver18, setIsOver18] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState("");
+  const [notice, setNotice] = useState("");
+
+  useEffect(() => {
+    setIsLogin(searchParams.get("mode") !== "signup");
+  }, [searchParams]);
+
+  const switchMode = (toLogin: boolean) => {
+    setError("");
+    setNotice("");
+    setIsLogin(toLogin);
+    router.replace(toLogin ? "/auth/login" : "/auth/login?mode=signup", { scroll: false });
+  };
+
+  const pwProblem = !isLogin && password ? passwordProblem(password) : null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -27,13 +58,29 @@ export default function LoginPage() {
 
       if (isLogin) {
         const res = await authApi.login(email, password);
+        if (res.twoFactorRequired) {
+          // Hand the address to the next step through sessionStorage rather
+          // than the query string — see the note below.
+          sessionStorage.setItem("vouchit_pending_email", email);
+          router.push("/auth/verify?mode=2fa");
+          return;
+        }
         if (res.accessToken) {
           setAuthToken(res.accessToken);
           router.push("/dashboard");
         }
       } else {
+        const problem = passwordProblem(password);
+        if (problem) {
+          setError(problem);
+          return;
+        }
         await authApi.register(email, password);
-        router.push(`/auth/verify?email=${encodeURIComponent(email)}`);
+        // The email used to be passed as ?email=..., which put a personal
+        // identifier into browser history, server logs and any referrer
+        // header the page emitted.
+        sessionStorage.setItem("vouchit_pending_email", email);
+        router.push("/auth/verify");
       }
     } catch (err: any) {
       console.error("Auth error:", err);
@@ -64,6 +111,11 @@ export default function LoginPage() {
             <div className="flex items-start gap-3 p-4 border border-[var(--danger)]/30 bg-red-50 text-red-700 text-sm font-semibold rounded-xl animate-in fade-in slide-in-from-top-4">
               <AlertCircle className="h-5 w-5 shrink-0 mt-0.5" />
               <span>{error}</span>
+            </div>
+          )}
+          {notice && (
+            <div className="p-4 border border-[var(--border)] bg-[var(--muted)]/20 text-sm font-semibold rounded-xl">
+              {notice}
             </div>
           )}
 
@@ -106,6 +158,25 @@ export default function LoginPage() {
                 {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
               </button>
             </div>
+            {!isLogin && (
+              // The server used to accept a single character. Say the rule up
+              // front rather than rejecting after submit.
+              <p className={`text-[10px] font-semibold uppercase tracking-widest ${pwProblem ? "text-[var(--danger)]" : "text-[var(--muted-foreground)]"}`}>
+                {pwProblem ?? `At least ${MIN_PASSWORD_LENGTH} characters, mixing two character types.`}
+              </p>
+            )}
+            {isLogin && (
+              <div className="text-right">
+                {/* There was no way to recover an account at all: forget your
+                    password and it was gone for good. */}
+                <Link
+                  href="/auth/forgot-password"
+                  className="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)] hover:text-[var(--foreground)] underline underline-offset-2"
+                >
+                  Forgot password?
+                </Link>
+              </div>
+            )}
           </div>
 
           {!isLogin && (
@@ -113,8 +184,28 @@ export default function LoginPage() {
               <div className={`mt-0.5 h-5 w-5 border-2 flex items-center justify-center shrink-0 transition-colors ${isOver18 ? 'bg-[var(--foreground)] border-[var(--foreground)]' : 'border-[var(--border)] group-hover:border-[var(--foreground)]'}`}>
                 {isOver18 && <Check className="h-3.5 w-3.5 text-[var(--background)] stroke-[3]" />}
               </div>
+              {/* "Terms of Service" was plain text with no link and no
+                  document behind it, so this box asked people to agree to
+                  nothing. */}
               <label htmlFor="age" className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] leading-relaxed cursor-pointer group-hover:text-[var(--foreground)] transition-colors">
-                I confirm that I am at least <strong className="text-[var(--foreground)]">18 years old</strong> and I agree to the Terms of Service.
+                I confirm that I am at least <strong className="text-[var(--foreground)]">18 years old</strong> and I agree to the{" "}
+                <Link
+                  href="/legal/terms"
+                  target="_blank"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-[var(--foreground)] underline underline-offset-2"
+                >
+                  Terms of Service
+                </Link>{" "}
+                and{" "}
+                <Link
+                  href="/legal/privacy"
+                  target="_blank"
+                  onClick={(e) => e.stopPropagation()}
+                  className="text-[var(--foreground)] underline underline-offset-2"
+                >
+                  Privacy Policy
+                </Link>.
               </label>
             </div>
           )}
@@ -122,7 +213,7 @@ export default function LoginPage() {
           <Button 
             type="submit" 
             className="w-full mt-2"
-            disabled={!email || !password || (!isLogin && !isOver18) || isLoading}
+            disabled={!email || !password || (!isLogin && (!isOver18 || !!pwProblem)) || isLoading}
           >
             {isLoading ? "PROCESSING..." : (isLogin ? "LOGIN" : "SIGN UP")}
             {!isLoading && <ArrowRight className="ml-3 h-5 w-5" />}
@@ -130,15 +221,26 @@ export default function LoginPage() {
 
           <div className="text-center text-[10px] font-semibold uppercase tracking-widest border-b border-[var(--border)] pb-6">
             <span className="text-[var(--muted-foreground)]">{isLogin ? "Don't have an account? " : "Already have an account? "}</span>
-            <button type="button" onClick={() => {
-              setError("");
-              setIsLogin(!isLogin);
-            }} className="text-[var(--foreground)] hover:underline border-b border-[var(--foreground)] pb-0.5 ml-2">
+            <button type="button" onClick={() => switchMode(!isLogin)} className="text-[var(--foreground)] hover:underline border-b border-[var(--foreground)] pb-0.5 ml-2">
               {isLogin ? "Sign up" : "Login"}
             </button>
           </div>
         </form>
       </div>
     </main>
+  );
+}
+
+export default function LoginPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex-1 flex items-center justify-center uppercase tracking-widest font-bold">
+          Loading…
+        </div>
+      }
+    >
+      <LoginContent />
+    </Suspense>
   );
 }

@@ -71,7 +71,7 @@ export default function LeaderboardPage() {
         </div>
         <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6 text-center">
           <Trophy className="h-12 w-12 text-[var(--muted-foreground)]" />
-          <h2 className="font-bold text-xl">No Rankings Yet</h2>
+          <h2 className="font-bold text-xl">No one on the board yet</h2>
           <p className="text-sm text-[var(--muted-foreground)]">Be the first to win a wager and claim the top spot!</p>
           <Link href="/vouch/create">
             <button className="px-6 py-3 rounded-xl text-sm font-bold text-white" style={{ background: "linear-gradient(135deg,#0d9488,#0f766e)" }}>

@@ -258,7 +258,7 @@ export default function ProfilePage() {
                 </div>
                 <div>
                   <p className="font-bold text-xl md:text-2xl text-[var(--primary)] truncate">
-                    {formatEarnings(totalWonByToken)}
+                    {formatEarnings(totalWonByToken, "None yet")}
                   </p>
                   <p className="text-xs text-[var(--muted-foreground)] font-semibold mt-0.5">Total Won</p>
                 </div>

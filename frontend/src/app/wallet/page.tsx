@@ -198,12 +198,12 @@ export default function WalletPage() {
               <div className="flex flex-wrap items-center gap-4 bg-white/10 rounded-xl p-4 mt-4">
                 <div className="flex-1 min-w-[110px]">
                   <p className="text-white/60 text-[10px] uppercase tracking-widest font-semibold">In Escrow</p>
-                  <p className="text-white font-semibold text-base mt-0.5">{formatEarnings(inEscrowByToken)}</p>
+                  <p className="text-white font-semibold text-base mt-0.5">{formatEarnings(inEscrowByToken, "Nothing locked")}</p>
                 </div>
                 <div className="h-8 w-px bg-white/20 hidden sm:block" />
                 <div className="flex-1 min-w-[110px]">
                   <p className="text-white/60 text-[10px] uppercase tracking-widest font-semibold">All-Time Won</p>
-                  <p className="text-white font-semibold text-base mt-0.5">{formatEarnings(wonByToken)}</p>
+                  <p className="text-white font-semibold text-base mt-0.5">{formatEarnings(wonByToken, "None yet")}</p>
                 </div>
               </div>
             </div>

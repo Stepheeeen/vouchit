@@ -13,7 +13,7 @@ const NAV_LINKS = [
   { href: "/dashboard",   label: "Dashboard",  icon: LayoutDashboard },
   { href: "/explore",     label: "Explore",    icon: Flame           },
   { href: "/wallet",      label: "Wallet",     icon: Wallet          },
-  { href: "/leaderboard", label: "Rankings",   icon: TrendingUp      },
+  { href: "/leaderboard", label: "Leaderboard", icon: TrendingUp     },
   { href: "/profile",     label: "Profile",    icon: User            },
 ];
 
@@ -29,6 +29,11 @@ function getInitials(name: string) {
 export default function AppNav() {
   const pathname = usePathname();
   const [user, setUser] = useState<any>(null);
+  // "unknown" until the profile call resolves. The nav used to render the
+  // full signed-in chrome — Dashboard, Wallet, Connect Wallet, "+ New", the
+  // notification bell and an avatar reading "..." — to anyone who opened a
+  // public page logged out.
+  const [authState, setAuthState] = useState<"unknown" | "in" | "out">("unknown");
   const { account, isConnected, isConnecting, linkWalletToBackend } = useWeb3();
 
   const [notifications, setNotifications] = useState<any[]>([]);
@@ -72,8 +77,11 @@ export default function AppNav() {
         const { userApi } = await import("@/lib/api");
         const profile = await userApi.getProfile();
         setUser(profile);
-      } catch (err) {
-        console.error("Failed to load user profile in nav", err);
+        setAuthState("in");
+      } catch {
+        // A 401 here is the normal case for a signed-out visitor on a public
+        // page, not an error worth logging.
+        setAuthState("out");
       }
     };
     load();
@@ -101,6 +109,37 @@ export default function AppNav() {
     } else {
       links.push({ href: "/admin/disputes", label: "Admin", icon: Shield });
     }
+  }
+
+  if (authState === "out") {
+    return (
+      <header className="fixed top-0 left-0 right-0 z-30 w-full bg-white/90 backdrop-blur-md border-b border-[var(--border)] flex items-center justify-between px-4 md:px-6 py-3">
+        <Link href="/" className="flex items-center">
+          <img src="/logo-full-colored.png" alt="Vouchit" className="h-9 w-auto object-contain" />
+        </Link>
+        <div className="flex items-center gap-3">
+          <Link
+            href="/explore"
+            className="hidden sm:inline text-sm font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+          >
+            Explore
+          </Link>
+          <Link
+            href="/auth/login"
+            className="text-sm font-semibold text-[var(--muted-foreground)] hover:text-[var(--foreground)] transition-colors"
+          >
+            Log in
+          </Link>
+          <Link
+            href="/auth/login?mode=signup"
+            className="px-4 py-2 rounded-full text-sm font-semibold text-white transition-opacity hover:opacity-90"
+            style={{ background: "linear-gradient(135deg,#0d9488,#0f766e)" }}
+          >
+            Sign up
+          </Link>
+        </div>
+      </header>
+    );
   }
 
   return (

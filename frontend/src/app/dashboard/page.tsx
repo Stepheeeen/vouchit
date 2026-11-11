@@ -13,7 +13,7 @@ const quickActions = [
   { href: "/vouch/create", icon: Plus,       label: "Create Wager", sub: "Start a new bet"   },
   { href: "/vouch/join",   icon: Users,      label: "Join Wager",   sub: "Enter invite code" },
   { href: "/explore",      icon: Flame,      label: "Explore",      sub: "Browse live bets"  },
-  { href: "/leaderboard",  icon: TrendingUp, label: "Rankings",     sub: "Top earners"       },
+  { href: "/leaderboard",  icon: TrendingUp, label: "Leaderboard",  sub: "Top earners"       },
 ];
 
 export default function Home() {
@@ -126,7 +126,7 @@ export default function Home() {
             <div className="relative z-10">
               <p className="text-white/70 text-[10px] font-semibold uppercase tracking-widest mb-1">In Escrow</p>
               <p className="text-4xl md:text-5xl lg:text-6xl font-bold text-white tracking-tight mb-2">
-                {formatEarnings(inEscrowByToken)}
+                {formatEarnings(inEscrowByToken, "Nothing locked")}
               </p>
               <p className="text-white/60 text-[10px] font-semibold uppercase tracking-widest mb-6">
                 Locked in the escrow contract · Vouchit never holds your funds
@@ -140,16 +140,19 @@ export default function Home() {
                 <div className="h-8 w-px bg-white/20 hidden sm:block" />
                 <div className="flex-1 min-w-[100px]">
                   <p className="text-white/60 text-[10px] uppercase tracking-widest font-semibold">All-Time Won</p>
-                  <p className="text-white font-semibold text-base mt-0.5">{formatEarnings(totalWonByToken)}</p>
+                  <p className="text-white font-semibold text-base mt-0.5">{formatEarnings(totalWonByToken, "None yet")}</p>
                 </div>
                 <div className="h-8 w-px bg-white/20 hidden sm:block" />
                 <div className="flex-1 min-w-[100px]">
                   <p className="text-white/60 text-[10px] uppercase tracking-widest font-semibold">Win Rate</p>
                   <p className="text-white font-semibold text-base mt-0.5">{winRate}%</p>
                 </div>
+                {/* Labelled "Fund", which promised a deposit this app cannot
+                    take — it is non-custodial and there is no balance to top
+                    up. It goes to the wallet page, so it says so. */}
                 <Link href="/wallet">
                   <button className="bg-white text-[var(--primary)] text-xs font-bold uppercase tracking-widest px-5 py-2.5 rounded-xl hover:bg-[var(--muted)] transition-colors flex items-center gap-2 shadow-sm shrink-0">
-                    Fund <ArrowUpRight className="h-3.5 w-3.5" />
+                    Wallet <ArrowUpRight className="h-3.5 w-3.5" />
                   </button>
                 </Link>
               </div>

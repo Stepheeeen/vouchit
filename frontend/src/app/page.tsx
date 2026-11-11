@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { ShieldCheck, Zap, Lock, ArrowRight } from "lucide-react";
+import { ShieldCheck, Zap, Lock, ArrowRight, KeyRound } from "lucide-react";
 
 export default function LandingPage() {
   return (
@@ -29,9 +29,18 @@ export default function LandingPage() {
           <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight text-[var(--foreground)] leading-[1.1] relative z-10">
             The <span className="text-[var(--primary)] relative">trust layer<svg className="absolute -bottom-2 left-0 w-full" viewBox="0 0 200 10" xmlns="http://www.w3.org/2000/svg"><path d="M0 5 Q 50 10, 100 5 T 200 5" fill="none" stroke="currentColor" strokeWidth="3" strokeLinecap="round"/></svg></span> for social wagers.
           </h1>
+          {/* The old copy described a product that no longer exists: a
+              custodial naira app with a Vouchit-held balance. It never
+              mentioned crypto, Base, or needing a wallet, so nobody arriving
+              here knew what they were signing up for. */}
           <p className="text-lg md:text-xl text-[var(--muted-foreground)] max-w-2xl mx-auto relative z-10">
-            Funds locked in a secure zero-sum escrow. Settle disputes transparently. Winner gets paid instantly. 
-            No more chasing friends for money.
+            Settle bets with friends in crypto, without either of you holding the money.
+            Both stakes go into a smart contract on Base. Agree on the winner and it pays
+            out on its own. No more chasing anyone for what they owe.
+          </p>
+          <p className="text-sm text-[var(--muted-foreground)]/80 max-w-xl mx-auto relative z-10">
+            Stakes are in ETH or USDC on Base. You sign in with a passkey — no browser
+            extension, no seed phrase. Vouchit takes 2.5% of the pot when a wager settles.
           </p>
           
           <div className="flex flex-col sm:flex-row items-center justify-center gap-4 pt-6 relative z-10">
@@ -52,9 +61,10 @@ export default function LandingPage() {
             <div className="h-12 w-12 rounded-2xl bg-teal-50 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
               <Lock className="h-6 w-6 text-[var(--primary)]" />
             </div>
-            <h3 className="text-xl font-bold mb-3 text-[var(--foreground)]">Zero-Sum Escrow</h3>
+            <h3 className="text-xl font-bold mb-3 text-[var(--foreground)]">Non-custodial escrow</h3>
             <p className="text-[var(--muted-foreground)] leading-relaxed">
-              When you enter a wager, your funds are securely locked in our smart ledger. Neither party can withdraw until the bet is settled.
+              Both stakes sit in the VouchitEscrow contract on Base, not in a Vouchit account.
+              We never hold your money and cannot move it. Neither can your opponent.
             </p>
           </div>
 
@@ -62,9 +72,11 @@ export default function LandingPage() {
             <div className="h-12 w-12 rounded-2xl bg-teal-50 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
               <Zap className="h-6 w-6 text-[var(--primary)]" />
             </div>
-            <h3 className="text-xl font-bold mb-3 text-[var(--foreground)]">Instant Payouts</h3>
+            <h3 className="text-xl font-bold mb-3 text-[var(--foreground)]">Paid out on-chain</h3>
             <p className="text-[var(--muted-foreground)] leading-relaxed">
-              Powered by Paystack integration. The moment a wager is mutually settled, the winner's wallet is credited instantly. No delays.
+              When you both vote for the same winner, the contract releases the pot to their
+              wallet in that same transaction, less a 2.5% fee. No withdrawal request, no
+              waiting on us.
             </p>
           </div>
 
@@ -72,9 +84,11 @@ export default function LandingPage() {
             <div className="h-12 w-12 rounded-2xl bg-teal-50 flex items-center justify-center mb-6 group-hover:scale-110 transition-transform">
               <ShieldCheck className="h-6 w-6 text-[var(--primary)]" />
             </div>
-            <h3 className="text-xl font-bold mb-3 text-[var(--foreground)]">Fair Disputes</h3>
+            <h3 className="text-xl font-bold mb-3 text-[var(--foreground)]">Disputes, resolved</h3>
             <p className="text-[var(--muted-foreground)] leading-relaxed">
-              If a disagreement occurs, both parties can upload evidence to our dispute resolution system for a fair, transparent verdict.
+              Disagree on who won? Both of you submit evidence and Vouchit decides, then
+              triggers the payout on-chain. If nobody joins your wager, the contract refunds
+              you in full.
             </p>
           </div>
 
@@ -83,7 +97,20 @@ export default function LandingPage() {
       </main>
 
       {/* Simple Footer */}
-      <footer className="w-full py-8 text-center text-[var(--muted-foreground)] text-sm border-t border-[var(--border)] mt-auto relative z-10 bg-[var(--background)]">
+      {/* A real-money wagering product shipped with no terms, no privacy
+          policy and no age or jurisdiction notice anywhere on the site. */}
+      <footer className="w-full py-8 px-6 text-center text-[var(--muted-foreground)] text-sm border-t border-[var(--border)] mt-auto relative z-10 bg-[var(--background)]">
+        <div className="flex flex-wrap items-center justify-center gap-x-5 gap-y-2 mb-4">
+          <Link href="/legal/terms" className="hover:text-[var(--foreground)] transition-colors">Terms of Service</Link>
+          <Link href="/legal/privacy" className="hover:text-[var(--foreground)] transition-colors">Privacy Policy</Link>
+          <Link href="/legal/responsible-play" className="hover:text-[var(--foreground)] transition-colors">Responsible Play</Link>
+        </div>
+        <p className="max-w-2xl mx-auto text-xs leading-relaxed mb-3">
+          18+ only. Wagering involves risk and you can lose everything you stake. Vouchit is
+          not available where peer-to-peer wagering is unlawful — it is your responsibility to
+          know the rules where you live. Stakes are crypto assets whose value moves; nothing
+          here is financial advice.
+        </p>
         <p>&copy; {new Date().getFullYear()} Vouchit. All rights reserved.</p>
       </footer>
     </div>

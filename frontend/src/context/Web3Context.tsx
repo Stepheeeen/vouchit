@@ -34,6 +34,13 @@ const noop = {
 
 const Web3Context = createContext<Web3ContextType>(noop);
 
+/**
+ * How long to wait for the wallet before declaring the attempt failed.
+ * Long enough to create a passkey unhurried, short enough that a blocked
+ * popup does not strand the UI.
+ */
+const CONNECT_TIMEOUT_MS = 90_000;
+
 const queryClient = new QueryClient();
 
 function Web3StateProvider({ children }: { children: React.ReactNode }) {
@@ -53,10 +60,40 @@ function Web3StateProvider({ children }: { children: React.ReactNode }) {
       if (!connector) return null;
 
       try {
-        const result = await connectAsync({ connector, chainId: ACTIVE_CHAIN.id });
+        /**
+         * Race the connection against a deadline.
+         *
+         * `connectAsync` never settles if the Coinbase popup is blocked or
+         * silently swallowed — which popup blockers, Brave shields and
+         * in-app browsers all do routinely. The button then sat on
+         * "Connecting…" indefinitely: no popup, no error, no timeout, and
+         * disabled so it could not even be retried. Only a page reload got
+         * out of it.
+         */
+        const result = await Promise.race([
+          connectAsync({ connector, chainId: ACTIVE_CHAIN.id }),
+          new Promise<never>((_, reject) =>
+            setTimeout(
+              () =>
+                reject(
+                  new Error(
+                    "Wallet didn't respond. If a sign-in window was blocked, allow pop-ups for this site and try again.",
+                  ),
+                ),
+              CONNECT_TIMEOUT_MS,
+            ),
+          ),
+        ]);
         return result.accounts[0] ?? null;
-      } catch (err) {
+      } catch (err: any) {
         console.error("Wallet connection failed:", err);
+        // Surface it. Returning null silently left callers unable to tell a
+        // refusal from a hang.
+        const { toast } = await import("sonner");
+        const rejected = /reject|denied|cancel/i.test(err?.message ?? "");
+        if (!rejected) {
+          toast.error(err?.message || "Could not connect your wallet. Try again.");
+        }
         return null;
       }
     },

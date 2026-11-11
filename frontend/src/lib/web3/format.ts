@@ -75,9 +75,21 @@ const DISPLAY_DECIMALS: Record<string, number> = { USDC: 6, ETH: 18 };
  * Render a per-token earnings map (`{ USDC: "125000000" }`) for a leaderboard
  * row. Amounts across different tokens are never summed — they're listed.
  */
-export function formatEarnings(earningsByToken: Record<string, string> | undefined): string {
+export function formatEarnings(
+  earningsByToken: Record<string, string> | undefined,
+  /**
+   * What to show when there is nothing to show.
+   *
+   * The default em-dash is fine in a table cell and disastrous as a headline:
+   * on the dashboard it was rendered at 60px in white on a teal panel, where
+   * it read as a solid white rectangle — the largest element on the page
+   * looked like a loading skeleton stuck forever. Callers rendering this big
+   * should pass something with words in it.
+   */
+  emptyLabel = "—",
+): string {
   const entries = Object.entries(earningsByToken ?? {}).filter(([, amount]) => amount && amount !== "0");
-  if (entries.length === 0) return "—";
+  if (entries.length === 0) return emptyLabel;
   return entries
     .map(([symbol, amount]) =>
       formatStakeCompact(amount, { tokenSymbol: symbol, tokenDecimals: DISPLAY_DECIMALS[symbol] ?? 18 }, 2),

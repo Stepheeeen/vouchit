@@ -14,7 +14,25 @@ function VerifyContent() {
   const [resendStatus, setResendStatus] = useState("");
   const inputRefs = useRef<(HTMLInputElement | null)[]>([]);
 
-  const email = searchParams.get("email") || "";
+  const [email, setEmail] = useState("");
+  // ?mode=2fa is the second step of a login, not a new-account verification.
+  const isTwoFactor = searchParams.get("mode") === "2fa";
+
+  useEffect(() => {
+    // The address used to arrive as ?email=..., which wrote a personal
+    // identifier into browser history, the server's access logs and any
+    // referrer this page sent. sessionStorage keeps it to this tab.
+    const stored = sessionStorage.getItem("vouchit_pending_email") || "";
+    const legacy = searchParams.get("email") || "";
+    const resolved = stored || legacy;
+    setEmail(resolved);
+    // Clean a legacy link so the address stops being re-shared on reload.
+    if (!stored && legacy) {
+      sessionStorage.setItem("vouchit_pending_email", legacy);
+      router.replace(isTwoFactor ? "/auth/verify?mode=2fa" : "/auth/verify", { scroll: false });
+    }
+    if (!resolved) router.replace("/auth/login");
+  }, [searchParams, router, isTwoFactor]);
 
   useEffect(() => {
     if (inputRefs.current[0]) {
@@ -62,33 +80,65 @@ function VerifyContent() {
     setResendStatus("Sending...");
     try {
       const { authApi } = await import("@/lib/api");
-      await authApi.register(email, "resend_otp_placeholder");
+      // This used to call register(email, "resend_otp_placeholder") — a new
+      // registration with a hardcoded password standing in for a resend. It
+      // only avoided overwriting the stored password because register took a
+      // different branch for unverified accounts, and it reported "Failed to
+      // send" for anyone whose address was already verified.
+      await authApi.resendOtp(email);
       setResendStatus("Code sent!");
       setTimeout(() => setResendStatus(""), 3000);
     } catch (err: any) {
-      setResendStatus("Failed to send.");
-      setTimeout(() => setResendStatus(""), 3000);
+      setResendStatus(err?.message?.includes("many") ? "Too many requests." : "Failed to send.");
+      setTimeout(() => setResendStatus(""), 4000);
     }
   };
 
+  /**
+   * Submit as soon as the sixth digit lands.
+   *
+   * The form sat there fully filled waiting for a button press, which reads
+   * as a dead end on a phone where the keyboard covers the button.
+   */
+  useEffect(() => {
+    if (otp.join("").length === 6 && !isLoading && email && !errorMsg) {
+      void submitCode(otp.join(""));
+    }
+    // Only react to the digits changing.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [otp.join("")]);
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setErrorMsg("");
     const code = otp.join("");
     if (code.length !== 6 || !email) return;
+    await submitCode(code);
+  };
+
+  const submitCode = async (code: string) => {
+    if (isLoading) return;
+    setErrorMsg("");
 
     setIsLoading(true);
     try {
       const { authApi, setAuthToken } = await import("@/lib/api");
-      const res = await authApi.verifyEmail(email, code);
+      const res = isTwoFactor
+        ? await authApi.loginTwoFactor(email, code)
+        : await authApi.verifyEmail(email, code);
       if (res.accessToken) {
         setAuthToken(res.accessToken);
+        sessionStorage.removeItem("vouchit_pending_email");
         router.push("/dashboard");
       } else {
         setErrorMsg("Failed to authenticate.");
       }
     } catch (err: any) {
-      setErrorMsg(err.message || "Invalid OTP");
+      setErrorMsg(err.message || "Invalid code");
+      // Clear the boxes and go back to the first one. Leaving the rejected
+      // digits sitting there meant the next attempt started by deleting six
+      // characters one at a time.
+      setOtp(["", "", "", "", "", ""]);
+      inputRefs.current[0]?.focus();
     } finally {
       setIsLoading(false);
     }
@@ -102,9 +152,11 @@ function VerifyContent() {
           <div className="h-20 w-20 rounded-2xl flex items-center justify-center mb-2 overflow-hidden bg-[var(--primary)] shadow-md">
             <img src="/logo-mark-transparent.png" alt="Vouchit Logo" className="h-12 w-12 object-contain" />
           </div>
-          <h1 className="text-3xl font-bold uppercase tracking-tighter w-full border-b border-[var(--border)] pb-4">Verify.</h1>
+          <h1 className="text-3xl font-bold uppercase tracking-tighter w-full border-b border-[var(--border)] pb-4">
+            {isTwoFactor ? "Confirm." : "Verify."}
+          </h1>
           <p className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)] mt-2">
-            Enter the 6-digit code sent to <br />
+            {isTwoFactor ? "Two-factor code sent to" : "Enter the 6-digit code sent to"} <br />
             <span className="text-[var(--foreground)] font-bold">{email || "your email"}</span>
           </p>
         </div>
@@ -142,8 +194,8 @@ function VerifyContent() {
             {!isLoading && <ArrowRight className="ml-3 h-5 w-5" />}
           </Button>
 
-          <div className="text-center text-[10px] font-semibold uppercase tracking-widest mt-2 border-t border-[var(--border)] pt-6">
-            <span className="text-[var(--muted-foreground)]">Didn't receive code? </span>
+          <div className={`text-center text-[10px] font-semibold uppercase tracking-widest mt-2 border-t border-[var(--border)] pt-6 ${isTwoFactor ? "hidden" : ""}`}>
+            <span className="text-[var(--muted-foreground)]">Didn&apos;t receive code? </span>
             <button 
               type="button" 
               onClick={handleResend}

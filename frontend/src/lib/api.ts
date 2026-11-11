@@ -7,6 +7,16 @@ const isLocal = typeof window !== 'undefined'
 export const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || 
   (isLocal ? 'http://localhost:3001' : 'https://vouchit.onrender.com');
 
+/**
+ * How long to wait before giving up on the API.
+ *
+ * Generous because the backend runs on Render's free plan, which sleeps when
+ * idle and takes most of a minute to wake. Finite because the alternative is
+ * what shipped: a request with no deadline, so a cold start or a dead backend
+ * left the page spinning forever with no error and nothing to retry.
+ */
+const REQUEST_TIMEOUT_MS = 70_000;
+
 export async function fetchApi(endpoint: string, options: RequestInit = {}) {
   const token = Cookies.get('vouchit_token');
 
@@ -22,17 +32,45 @@ export async function fetchApi(endpoint: string, options: RequestInit = {}) {
     headers['Authorization'] = `Bearer ${token}`;
   }
 
-  const response = await fetch(`${API_BASE_URL}${endpoint}`, {
-    ...options,
-    headers,
-  });
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
+  let response: Response;
+  try {
+    response = await fetch(`${API_BASE_URL}${endpoint}`, {
+      ...options,
+      headers,
+      signal: options.signal ?? controller.signal,
+    });
+  } catch (err: any) {
+    if (err?.name === 'AbortError') {
+      throw new Error(
+        'The server took too long to respond. It may be waking up — try again in a moment.',
+      );
+    }
+    throw new Error('Could not reach the server. Check your connection and try again.');
+  } finally {
+    clearTimeout(timer);
+  }
 
   if (!response.ok) {
     const errorData = await response.json().catch(() => ({}));
+    if (response.status === 429) {
+      throw new Error(
+        errorData.message || 'Too many attempts. Wait a few minutes and try again.',
+      );
+    }
     throw new Error(errorData.message || `Request failed: ${response.status}`);
   }
 
-  return response.json();
+  // 204 and other empty bodies are valid answers, not parse failures.
+  const text = await response.text();
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    return null;
+  }
 }
 
 // Shared token storage so every call site (login, verify, logout) applies the
