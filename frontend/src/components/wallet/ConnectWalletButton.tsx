@@ -117,7 +117,10 @@ export function ConnectWalletButton({
                     </span>
                     <span className="flex flex-col gap-0.5 min-w-0">
                       <span className="font-semibold text-sm">
-                        {copy.title}
+                        {/* For an extension, name the wallet that will open.
+                            "Use a browser wallet" twice over told nobody
+                            which was which. */}
+                        {w.kind === "extension" ? `Use ${w.name}` : copy.title}
                         {w.kind === "passkey" && (
                           <span className="ml-2 text-[10px] font-bold uppercase tracking-widest text-[var(--primary)]">
                             Recommended

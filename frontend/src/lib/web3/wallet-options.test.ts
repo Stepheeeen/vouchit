@@ -43,3 +43,45 @@ describe("wallet picker options", () => {
     assert.equal(classifyConnector({ id: "smartWallet", name: "Smart Wallet" }), "passkey");
   });
 });
+
+describe("duplicate connectors", () => {
+  // wagmi lists the configured injected() connector AND every wallet that
+  // announces itself via EIP-6963. With only MetaMask installed that is two
+  // connectors for one wallet, and the picker showed two identical
+  // "Use a browser wallet" buttons.
+  const configuredInjected = { id: "injected", name: "Injected" };
+  const discoveredMetaMask = { id: "io.metamask", name: "MetaMask" };
+
+  it("shows one entry when two connectors mean the same wallet", () => {
+    const options = buildWalletOptions([configuredInjected, discoveredMetaMask]);
+    assert.equal(options.filter((o) => o.kind === "extension").length, 1);
+  });
+
+  it("keeps the one that names the wallet", () => {
+    // "MetaMask" tells someone what will open; "Injected" does not.
+    const options = buildWalletOptions([configuredInjected, discoveredMetaMask]);
+    assert.equal(options.find((o) => o.kind === "extension")?.name, "MetaMask");
+  });
+
+  it("is order-independent", () => {
+    const a = buildWalletOptions([configuredInjected, discoveredMetaMask]);
+    const b = buildWalletOptions([discoveredMetaMask, configuredInjected]);
+    assert.deepEqual(a, b);
+  });
+
+  it("still lists two genuinely different extensions", () => {
+    const rabby = { id: "io.rabby", name: "Rabby Wallet" };
+    const options = buildWalletOptions([discoveredMetaMask, rabby]);
+    assert.equal(options.filter((o) => o.kind === "extension").length, 2);
+  });
+
+  it("collapses duplicate passkey or mobile connectors to one each", () => {
+    const options = buildWalletOptions([
+      { id: "coinbaseWalletSDK", name: "Coinbase Wallet" },
+      { id: "coinbaseWallet", name: "Coinbase Smart Wallet" },
+      { id: "walletConnect", name: "WalletConnect" },
+    ]);
+    assert.equal(options.filter((o) => o.kind === "passkey").length, 1);
+    assert.equal(options.filter((o) => o.kind === "mobile").length, 1);
+  });
+});
