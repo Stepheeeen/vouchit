@@ -176,22 +176,10 @@ export default function WalletPage() {
               <p className="text-white/70 text-[10px] font-semibold uppercase tracking-widest mb-1">
                 Connected Wallet · {ACTIVE_CHAIN.name}
               </p>
-              <div className="flex items-center justify-between gap-3 flex-wrap">
-                <button onClick={copyAddress} className="flex items-center gap-2 text-white font-bold text-xl tracking-tight">
-                  {account?.slice(0, 10)}…{account?.slice(-8)}
-                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4 opacity-60" />}
-                </button>
-                {/* There was no way to disconnect anywhere in the app. The
-                    context exposed disconnectWallet and nothing ever called
-                    it, so connecting the wrong wallet was permanent, and on a
-                    shared phone the next person inherited the session. */}
-                <button
-                  onClick={disconnectWallet}
-                  className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-white/80 hover:text-white border border-white/30 hover:border-white/60 rounded-lg px-3 py-1.5 transition-colors shrink-0"
-                >
-                  <LogOut className="h-3.5 w-3.5" /> Disconnect
-                </button>
-              </div>
+              <button onClick={copyAddress} className="flex items-center gap-2 text-white font-bold text-xl tracking-tight">
+                {account?.slice(0, 10)}…{account?.slice(-8)}
+                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4 opacity-60" />}
+              </button>
 
               {!isCorrectChain && (
                 <p className="mt-3 text-[11px] font-semibold text-amber-200">
@@ -305,6 +293,52 @@ export default function WalletPage() {
             View on {ACTIVE_CHAIN.blockExplorers?.default.name} <ExternalLink className="h-3.5 w-3.5" />
           </a>
         )}
+        {/*
+          Disconnecting deserves its own field rather than a ghost button
+          tucked beside the address on the coloured card, where it read as
+          decoration. It is labelled, it says what will happen, and the
+          control looks like a control.
+        */}
+        {isConnected && (
+          <div
+            className="bg-white border border-[var(--border)] rounded-2xl p-6 flex flex-col gap-4"
+            style={{ boxShadow: "var(--shadow-sm)" }}
+          >
+            <div className="flex flex-col gap-1">
+              <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">
+                Wallet connection
+              </p>
+              <p className="font-mono text-sm break-all text-[var(--foreground)]">{account}</p>
+            </div>
+
+            <p className="text-sm text-[var(--muted-foreground)] leading-relaxed">
+              Disconnecting signs this wallet out of Vouchit <strong>in this browser only</strong>.
+              Nothing moves: your funds stay in your wallet, anything already in escrow stays in
+              escrow, and you can reconnect whenever you like. Use this if you connected the wrong
+              wallet, want to switch to another, or are on a device someone else uses.
+            </p>
+
+            <button
+              onClick={disconnectWallet}
+              className="self-start flex items-center gap-2 px-5 py-2.5 rounded-xl border border-[var(--border)] bg-white text-sm font-semibold text-[var(--foreground)] hover:bg-[var(--muted)] transition-colors"
+            >
+              <LogOut className="h-4 w-4 text-[var(--muted-foreground)]" />
+              Disconnect wallet
+            </button>
+
+            {isLinkedToThisAccount && (
+              <p className="text-xs text-[var(--muted-foreground)] leading-relaxed border-t border-[var(--border)] pt-3">
+                This wallet stays linked to your account as your payout address. To remove that
+                link as well, go to{" "}
+                <Link href="/settings" className="underline text-[var(--primary)]">
+                  Settings → Account
+                </Link>
+                .
+              </p>
+            )}
+          </div>
+        )}
+
       </main>
     </div>
   );

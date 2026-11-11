@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Flame, Wallet,
-  User, TrendingUp, Bell, Plus, ChevronDown, Settings, Shield, Link2
+  User, TrendingUp, Bell, Plus, ChevronDown, Settings, Shield, Link2, Unplug
 } from "lucide-react";
 import { useWeb3 } from "@/context/Web3Context";
 
@@ -34,7 +34,7 @@ export default function AppNav() {
   // notification bell and an avatar reading "..." — to anyone who opened a
   // public page logged out.
   const [authState, setAuthState] = useState<"unknown" | "in" | "out">("unknown");
-  const { account, isConnected, isConnecting, linkWalletToBackend } = useWeb3();
+  const { account, isConnected, isConnecting, linkWalletToBackend, disconnectWallet } = useWeb3();
 
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -382,6 +382,20 @@ export default function AppNav() {
                   >
                     <Settings className="h-4 w-4 text-[var(--muted-foreground)]" /> Settings
                   </Link>
+                  {/* People look for session actions in the account menu, so
+                      the one that ends a wallet session belongs here too —
+                      not only on a page you have to know to visit. */}
+                  {isConnected && (
+                    <button
+                      onClick={() => {
+                        disconnectWallet();
+                        setShowAccountMenu(false);
+                      }}
+                      className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-left border-t border-[var(--border)] hover:bg-[var(--muted)] transition-colors"
+                    >
+                      <Unplug className="h-4 w-4 text-[var(--muted-foreground)]" /> Disconnect wallet
+                    </button>
+                  )}
                 </div>
               </>
             )}
