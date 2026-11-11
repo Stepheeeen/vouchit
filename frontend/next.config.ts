@@ -11,14 +11,17 @@ const optionalConnectorStub = path.resolve(rootDir, "src/lib/web3/optional-conne
  * not offer. The package is a barrel, so bundlers try to resolve every
  * connector's SDK; these are aliased to a stub instead of installed.
  * `@coinbase/wallet-sdk` is deliberately absent — it backs the Coinbase Smart
- * Wallet connector, which is the one we actually use. `@base-org/account` is
+ * Wallet connector, which is the one we actually use, and
+ * `@walletconnect/ethereum-provider` is likewise installed for real now that
+ * WalletConnect is offered: it is what reaches the hundreds of mobile wallets
+ * that people without a browser extension actually have. wagmi imports it
+ * lazily, so the bundle cost falls only on users who choose that option. `@base-org/account` is
  * stubbed rather than installed: it is only needed by the unused `baseAccount`
  * connector and pulls a Node-only server SDK into the browser bundle.
  */
 const UNUSED_CONNECTOR_DEPS = [
   "accounts",
   "@base-org/account",
-  "@walletconnect/ethereum-provider",
   "@safe-global/safe-apps-provider",
   "@safe-global/safe-apps-sdk",
   "@metamask/connect-evm",

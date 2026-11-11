@@ -10,6 +10,7 @@ import { useEscrow } from "@/lib/web3/useEscrow";
 import { findToken } from "@/lib/web3/tokens";
 import { ACTIVE_CHAIN } from "@/lib/web3/config";
 import { formatStake, applyProtocolFee } from "@/lib/web3/format";
+import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 
 export default function JoinVouchPage() {
   const params = useParams<{ id: string }>();
@@ -244,9 +245,7 @@ export default function JoinVouchPage() {
             </p>
 
             {!isConnected ? (
-              <Button type="button" onClick={() => connectWallet()} disabled={isConnecting} className="w-full">
-                {isConnecting ? "CONNECTING…" : "CONNECT WALLET TO JOIN"}
-              </Button>
+              <ConnectWalletButton className="w-full" />
             ) : !isCorrectChain ? (
               <p className="text-xs text-[var(--danger)] font-semibold">
                 Switch your wallet to {ACTIVE_CHAIN.name} to join this wager.

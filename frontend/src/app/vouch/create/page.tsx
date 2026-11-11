@@ -12,6 +12,7 @@ import { getTokens } from "@/lib/web3/tokens";
 import { useTokenBalance, useGasBalance, useUsdPrice, toUsd } from "@/lib/web3/useWalletMoney";
 import { ACTIVE_CHAIN, isEscrowConfigured } from "@/lib/web3/config";
 import { formatUnits, parseUnits, isAddress, zeroAddress } from "viem";
+import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 
 const PROTOCOL_FEE_BPS = 250n;
 const BPS = 10_000n;
@@ -283,10 +284,7 @@ export default function CreateVouchPage() {
                 Your stake is locked in the escrow contract, not held by Vouchit. Sign in with a
                 passkey — no extension or seed phrase needed.
               </p>
-              <Button type="button" onClick={() => connectWallet()} disabled={isConnecting} className="mt-2">
-                <Wallet className="mr-3 h-5 w-5" />
-                {isConnecting ? "CONNECTING…" : "CONNECT WALLET"}
-              </Button>
+              <ConnectWalletButton className="mt-2" />
             </section>
           ) : !isCorrectChain ? (
             <div className="flex items-start gap-3 p-4 border border-[var(--danger)]/30 bg-red-50 text-red-700 text-sm font-semibold">

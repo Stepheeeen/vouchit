@@ -12,6 +12,7 @@ import { erc20Abi } from "@/lib/web3/escrowAbi";
 import { formatStakeCompact, formatStake, applyProtocolFee, sumByToken, formatEarnings } from "@/lib/web3/format";
 import { AddFunds } from "@/components/wallet/AddFunds";
 import { useUsdPrice, toUsd } from "@/lib/web3/useWalletMoney";
+import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 
 /** Balance row for one supported stake token. */
 function TokenBalance({ token }: { token: ReturnType<typeof getTokens>[number] }) {
@@ -162,9 +163,7 @@ export default function WalletPage() {
               Sign in with a passkey — no extension, no seed phrase. Your stakes go straight into the
               escrow contract on {ACTIVE_CHAIN.name}.
             </p>
-            <Button onClick={() => connectWallet()} disabled={isConnecting} className="mt-2">
-              {isConnecting ? "CONNECTING…" : "CONNECT WALLET"}
-            </Button>
+            <ConnectWalletButton className="mt-2" />
           </div>
         ) : (
           <div

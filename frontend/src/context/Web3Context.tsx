@@ -5,6 +5,7 @@ import { WagmiProvider, useAccount, useChainId, useConnect, useDisconnect, useSi
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { userApi, web3Api } from "@/lib/api";
 import { wagmiConfig, ACTIVE_CHAIN } from "@/lib/web3/config";
+import { buildWalletOptions } from "@/lib/web3/wallet-options";
 
 interface Web3ContextType {
   account: string | null;
@@ -14,10 +15,16 @@ interface Web3ContextType {
   /** True when the connected wallet is on the network the escrow is deployed to. */
   isCorrectChain: boolean;
   /** Passkey / smart-wallet sign-in. Falls back to a browser wallet if present. */
-  connectWallet: (options?: { useBrowserWallet?: boolean }) => Promise<string | null>;
+  connectWallet: (options?: {
+    useBrowserWallet?: boolean;
+    /** Connector id, e.g. "coinbaseWalletSDK" | "walletConnect" | "injected". */
+    walletId?: string;
+  }) => Promise<string | null>;
   disconnectWallet: () => void;
   signMessage: (message: string) => Promise<string | null>;
   linkWalletToBackend: () => Promise<boolean>;
+  /** Sign-in options this deployment actually offers, as wagmi reports them. */
+  availableWallets: Array<{ id: string; name: string; kind: "passkey" | "mobile" | "extension" }>;
 }
 
 const noop = {
@@ -30,6 +37,7 @@ const noop = {
   disconnectWallet: () => {},
   signMessage: async () => null,
   linkWalletToBackend: async () => false,
+  availableWallets: [],
 };
 
 const Web3Context = createContext<Web3ContextType>(noop);
@@ -52,11 +60,25 @@ function Web3StateProvider({ children }: { children: React.ReactNode }) {
   const [isLinking, setIsLinking] = useState(false);
 
   const connectWallet = useCallback(
-    async (options?: { useBrowserWallet?: boolean }) => {
-      // connectors[0] is the Coinbase Smart Wallet (passkey), [1] is injected.
-      const connector = options?.useBrowserWallet
-        ? connectors.find((c) => c.id === "injected") ?? connectors[0]
-        : connectors[0];
+    async (options?: { useBrowserWallet?: boolean; walletId?: string }) => {
+      /**
+       * Resolve the connector without relying on its position OR on a
+       * hardcoded id string.
+       *
+       * It used to index `connectors[0]` and `connectors[1]`, which held only
+       * while there were exactly two in a fixed order — adding WalletConnect
+       * silently changed what "the browser wallet" meant. Ids would be
+       * better, but they are an implementation detail of the connector
+       * package and have changed between versions, so a wrong guess would be
+       * hidden by the fallback and surface later as the wrong wallet opening.
+       * Matching on what the connector reports about itself survives both.
+       */
+      const connector = options?.walletId
+        ? connectors.find((c) => c.id === options.walletId)
+        : options?.useBrowserWallet
+          ? connectors.find((c) => /injected|metamask|browser/i.test(`${c.id} ${c.name}`)) ??
+            connectors[0]
+          : connectors.find((c) => /coinbase|smart/i.test(`${c.id} ${c.name}`)) ?? connectors[0];
       if (!connector) return null;
 
       try {
@@ -141,6 +163,19 @@ function Web3StateProvider({ children }: { children: React.ReactNode }) {
     }
   }, [address, connectWallet, isLinking, signMessage]);
 
+  /**
+   * The sign-in options this deployment actually offers.
+   *
+   * Built from wagmi's own connector list so the picker can never advertise
+   * something that is not configured — WalletConnect is only present when a
+   * project id is set, and listing it regardless would hand people a button
+   * that fails the moment they tap it.
+   */
+  const availableWallets = useMemo(
+    () => buildWalletOptions(connectors.map((c) => ({ id: c.id, name: c.name }))),
+    [connectors],
+  );
+
   const value = useMemo(
     () => ({
       account: address ?? null,
@@ -152,8 +187,9 @@ function Web3StateProvider({ children }: { children: React.ReactNode }) {
       disconnectWallet: () => disconnect(),
       signMessage,
       linkWalletToBackend,
+      availableWallets,
     }),
-    [address, chainId, isConnected, isPending, isLinking, connectWallet, disconnect, signMessage, linkWalletToBackend],
+    [address, chainId, isConnected, isPending, isLinking, connectWallet, disconnect, signMessage, linkWalletToBackend, availableWallets],
   );
 
   return <Web3Context.Provider value={value}>{children}</Web3Context.Provider>;

@@ -6,6 +6,20 @@
  * exactly, with no price oracle in the path.
  *
  * Must stay in sync with frontend/src/lib/web3/tokens.ts.
+ *
+ * This is an ALLOWLIST, not a filter, and deliberately so. Because Vouchit
+ * never holds the funds it is tempting to let people stake any ERC-20 they
+ * like — but the escrow records `totalPot += stakeAmount` and never checks
+ * what actually arrived. A fee-on-transfer token (one that keeps a cut of
+ * every transfer, which is ordinary behaviour for a whole class of real
+ * tokens) therefore leaves the contract holding less than it thinks it has,
+ * and settlement reverts FOREVER with both stakes trapped inside. Rebasing
+ * tokens break it the same way. Demonstrated against a 1% fee token: a
+ * 20-token pot, 19.8 held, settlement permanently impossible.
+ *
+ * So only tokens with plain, well-understood transfer semantics belong here,
+ * and each address below was read off Base mainnet rather than copied from
+ * memory — a wrong address is lost money.
  */
 export const NATIVE_TOKEN_ADDRESS = '0x0000000000000000000000000000000000000000';
 
@@ -50,6 +64,24 @@ const TOKENS_BY_CHAIN: Record<number, StakeToken[]> = {
       minStake: 200_000_000_000_000n,
       // 0.01 / 0.1 / uncapped ETH
       tierMaxStake: [10_000_000_000_000_000n, 100_000_000_000_000_000n, null],
+    },
+    {
+      // Coinbase Wrapped BTC. Bitcoin is what a lot of people actually hold
+      // and want to bet with; 8 decimals, like BTC itself.
+      address: '0xcbb7c0000ab88b473b1f5afd9ef808440eed33bf',
+      symbol: 'cbBTC',
+      decimals: 8,
+      minStake: 2_000n, // 0.00002 cbBTC
+      // Sized to roughly match the USDC caps in dollar terms.
+      tierMaxStake: [35_000n, 350_000n, null],
+    },
+    {
+      address: '0x50c5725949a6f0c72e6c4a641f24049a917db0cb',
+      symbol: 'DAI',
+      decimals: 18,
+      minStake: 1_000_000_000_000_000_000n, // 1 DAI
+      // 25 / 250 / uncapped DAI, matching USDC.
+      tierMaxStake: [25_000_000_000_000_000_000n, 250_000_000_000_000_000_000n, null],
     },
   ],
   [LOCAL_CHAIN]: [

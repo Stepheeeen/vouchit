@@ -5,6 +5,14 @@
  * tokens. There is no fiat conversion anywhere in the wager path, so no price
  * oracle is required to verify that an on-chain stake matches what the user
  * agreed to.
+ *
+ * An ALLOWLIST on purpose. Not holding user funds does not mean any ERC-20 is
+ * safe to stake: the escrow records the pot as the amount it asked for, never
+ * the amount that arrived, so a fee-on-transfer or rebasing token leaves it
+ * holding less than it believes and settlement reverts permanently with both
+ * stakes trapped. See the matching note in backend/src/web3/tokens.ts.
+ *
+ * Must stay in sync with that file — tokens-in-sync.test.ts enforces it.
  */
 import { base, baseSepolia } from "wagmi/chains";
 
@@ -39,6 +47,22 @@ export const TOKENS_BY_CHAIN: Record<number, StakeToken[]> = {
       decimals: 18,
       minStake: 200_000_000_000_000n, // 0.0002 ETH
       stakeStep: "0.001",
+    },
+    {
+      address: "0xcbB7C0000aB88B473b1f5aFd9ef808440eed33Bf",
+      symbol: "cbBTC",
+      name: "Coinbase Wrapped BTC",
+      decimals: 8,
+      minStake: 2_000n, // 0.00002 cbBTC
+      stakeStep: "0.0001",
+    },
+    {
+      address: "0x50c5725949A6F0c72E6C4a641F24049A917DB0Cb",
+      symbol: "DAI",
+      name: "Dai Stablecoin",
+      decimals: 18,
+      minStake: 1_000_000_000_000_000_000n, // 1 DAI
+      stakeStep: "1",
     },
   ],
   [baseSepolia.id]: [
