@@ -20,7 +20,9 @@
     "test:debug": "node --inspect-brk -r tsconfig-paths/register -r ts-node/register node_modules/.bin/jest --runInBand",
     "test:e2e": "jest src/wagers/wager-lifecycle.spec.ts --runInBand --forceExit",
     "test:integration": "jest src/auth/auth-responses.spec.ts src/wagers/wager-lifecycle.spec.ts --runInBand --forceExit",
-    "mongo:fetch": "MONGOMS_VERSION=${MONGOMS_VERSION:-6.0.14} node -e \"require('mongodb-memory-server-core/lib/util/MongoBinary').MongoBinary.getPath({version: process.env.MONGOMS_VERSION}).then(p=>console.log(p))\""
+    "mongo:fetch": "MONGOMS_VERSION=${MONGOMS_VERSION:-6.0.14} node -e \"require('mongodb-memory-server-core/lib/util/MongoBinary').MongoBinary.getPath({version: process.env.MONGOMS_VERSION}).then(p=>console.log(p))\"",
+    "db:backfill": "node scripts/backfill-user-defaults.js",
+    "db:backfill:apply": "node scripts/backfill-user-defaults.js --apply"
   },
   "dependencies": {
     "@nestjs/bullmq": "^11.0.4",

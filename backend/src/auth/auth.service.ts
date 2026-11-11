@@ -72,6 +72,21 @@ export class AuthService {
   }
 
   /**
+   * Whether this process should actually post mail.
+   *
+   * Checked separately from the key because a unit test must never reach the
+   * network: a spec was observed making a real Resend request and getting a
+   * 422 back, which makes the suite depend on an external service being up
+   * and on someone's quota. `delete process.env.RESEND_API_KEY` in
+   * test/setup-env.ts is not enough on its own — the env can be repopulated
+   * by a loader after that runs — so the test environment is excluded
+   * explicitly.
+   */
+  private mailEnabled(): boolean {
+    return !!process.env.RESEND_API_KEY && process.env.NODE_ENV !== 'test';
+  }
+
+  /**
    * Send the verification code.
    *
    * Returns whether it actually went out. The old code swallowed the failure
@@ -80,8 +95,8 @@ export class AuthService {
    * sent, with no way to tell and nothing to retry.
    */
   private async sendOtpEmail(email: string, otp: string): Promise<boolean> {
-    if (!process.env.RESEND_API_KEY) {
-      console.log(`[Mock Resend] Missing RESEND_API_KEY. OTP is ${otp} for ${email}`);
+    if (!this.mailEnabled()) {
+      console.log(`[Mock Resend] Mail disabled. OTP is ${otp} for ${email}`);
       return true;
     }
     try {
@@ -105,7 +120,7 @@ export class AuthService {
 
   /** Tell someone their account was just signed into, if they asked to know. */
   private async sendLoginAlert(email: string) {
-    if (!process.env.RESEND_API_KEY) return;
+    if (!this.mailEnabled()) return;
     try {
       await this.resend.emails.send({
         from: process.env.RESEND_FROM_EMAIL || 'Vouchit <noreply@usevouchit.com>',
@@ -388,7 +403,7 @@ export class AuthService {
       data: { otp, otpExpiresAt: new Date(Date.now() + OTP_TTL_MS), otpAttempts: 0 },
     });
 
-    if (process.env.RESEND_API_KEY) {
+    if (this.mailEnabled()) {
       try {
         await this.resend.emails.send({
           from: process.env.RESEND_FROM_EMAIL || 'Vouchit <noreply@usevouchit.com>',

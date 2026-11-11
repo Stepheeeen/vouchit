@@ -10,10 +10,10 @@ import { PrismaService } from '../prisma/prisma.service';
  */
 describe('AuthService', () => {
   let service: AuthService;
-  let prisma: { user: { findUnique: jest.Mock; update: jest.Mock } };
+  let prisma: { user: { findUnique: jest.Mock; update: jest.Mock; create: jest.Mock } };
 
   beforeEach(async () => {
-    prisma = { user: { findUnique: jest.fn(), update: jest.fn() } };
+    prisma = { user: { findUnique: jest.fn(), update: jest.fn(), create: jest.fn() } };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
@@ -137,7 +137,7 @@ describe('AuthService', () => {
       const taken: any = await service.register('taken@example.com', 'Correct-Horse-9');
 
       prisma.user.findUnique.mockResolvedValue(null);
-      prisma.user.create = jest.fn().mockResolvedValue({ id: 'u2' });
+      prisma.user.create.mockResolvedValue({ id: 'u2' });
       const fresh: any = await service.register('fresh@example.com', 'Correct-Horse-9');
 
       expect(taken.message).toBe(fresh.message);

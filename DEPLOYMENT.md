@@ -208,6 +208,40 @@ the 3-wager concurrency limit. Confirm both, and confirm the ceiling is refused
 
 ---
 
+## 4b. Migrating a database that already has users
+
+Prisma applies `@default(...)` when it **creates** a document, not when it
+reads one. A `User` written before a field existed simply lacks it, and Prisma
+then refuses to materialise the whole row:
+
+```
+Invalid `prisma.user.findUnique()` invocation
+```
+
+So the account becomes entirely unreadable, not merely missing a value. This
+was confirmed against a real document, not assumed — a legacy-shaped `User`
+was inserted into staging, failed to read, and read correctly after the
+backfill below.
+
+The staging database is empty, so it needs nothing. Any database that already
+holds users does:
+
+```bash
+cd backend
+npm run db:backfill          # report what is missing, change nothing
+npm run db:backfill:apply    # write the defaults
+```
+
+It is safe to re-run: every update is conditional on the field being absent.
+`sessionsValidFrom` is set per document from its own `createdAt`, so existing
+sessions stay valid instead of everyone being signed out at once.
+
+Keep `scripts/backfill-user-defaults.js` in step with the `User` model. A new
+non-nullable column added to the schema without a matching entry there will
+break reads of every older document in exactly the way above.
+
+---
+
 ## 5. Before mainnet
 
 - [ ] **Decide how the relayer key is held.** It owns the contract and is the
@@ -228,7 +262,14 @@ the 3-wager concurrency limit. Confirm both, and confirm the ceiling is refused
 - [x] **Tier-0 defaults settled.** NEWCOMER: open wagers allowed, 3 concurrent,
       0.01 ETH / 25 USDC ceiling. Revisit the open-wager permission the moment a
       promotion signal actually works.
-- [ ] Decide the fate of the old production database and the naira app.
+- [x] **Naira is gone from the code.** The ledger, Wallet, LedgerEntry and
+      Transaction models went earlier; the last remnants — the `BankAccount`
+      model, its relation on `User`, and `PAYSTACK_SECRET_KEY` — are now
+      removed too, along with the landing copy that still advertised Paystack.
+      There is no fiat path and no bank detail stored anywhere.
+- [ ] Decide the fate of the **old production database**, which still holds
+      naira-era documents. Do not point this build at it without reading
+      "Migrating a database that already has users" below.
 - [ ] Confirm the treasury wallet is one you can actually open. Fees are
       irreversible, and an address pasted without its checksum hides a typo.
 
