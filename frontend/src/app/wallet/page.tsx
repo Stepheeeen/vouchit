@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, ArrowUpRight, ArrowDownRight, Shield, Copy, ExternalLink, Loader2, Wallet as WalletIcon, Check } from "lucide-react";
+import { ArrowLeft, ArrowUpRight, ArrowDownRight, Shield, Copy, ExternalLink, Loader2, Wallet as WalletIcon, Check, LogOut } from "lucide-react";
 import { useAccount, useBalance, useReadContract } from "wagmi";
 import { Button } from "@/components/ui/button";
 import { useWeb3 } from "@/context/Web3Context";
@@ -64,7 +64,8 @@ function TokenBalance({ token }: { token: ReturnType<typeof getTokens>[number] }
 }
 
 export default function WalletPage() {
-  const { account, isConnected, isCorrectChain, isConnecting, connectWallet } = useWeb3();
+  const { account, isConnected, isCorrectChain, isConnecting, connectWallet, disconnectWallet } =
+    useWeb3();
   const [wagers, setWagers] = useState<any[]>([]);
   const [user, setUser] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(true);
@@ -175,10 +176,22 @@ export default function WalletPage() {
               <p className="text-white/70 text-[10px] font-semibold uppercase tracking-widest mb-1">
                 Connected Wallet · {ACTIVE_CHAIN.name}
               </p>
-              <button onClick={copyAddress} className="flex items-center gap-2 text-white font-bold text-xl tracking-tight">
-                {account?.slice(0, 10)}…{account?.slice(-8)}
-                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4 opacity-60" />}
-              </button>
+              <div className="flex items-center justify-between gap-3 flex-wrap">
+                <button onClick={copyAddress} className="flex items-center gap-2 text-white font-bold text-xl tracking-tight">
+                  {account?.slice(0, 10)}…{account?.slice(-8)}
+                  {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4 opacity-60" />}
+                </button>
+                {/* There was no way to disconnect anywhere in the app. The
+                    context exposed disconnectWallet and nothing ever called
+                    it, so connecting the wrong wallet was permanent, and on a
+                    shared phone the next person inherited the session. */}
+                <button
+                  onClick={disconnectWallet}
+                  className="flex items-center gap-1.5 text-[11px] font-bold uppercase tracking-widest text-white/80 hover:text-white border border-white/30 hover:border-white/60 rounded-lg px-3 py-1.5 transition-colors shrink-0"
+                >
+                  <LogOut className="h-3.5 w-3.5" /> Disconnect
+                </button>
+              </div>
 
               {!isCorrectChain && (
                 <p className="mt-3 text-[11px] font-semibold text-amber-200">

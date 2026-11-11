@@ -110,9 +110,30 @@ export class Web3Service {
   }
 
   /**
-   * Unlink EVM wallet
+   * Unlink the wallet from this account.
+   *
+   * Refused while a wager is live, which it was not before. The escrow does
+   * not care about this field — it pays the address that staked, and will go
+   * on doing so — but every app-side check does: verifyOnChainWager and
+   * verifyOnChainJoin compare the escrow entry against `web3Address`, so
+   * clearing it mid-wager leaves someone with real money in the contract and
+   * no way to register their join, vote or settlement through Vouchit. Their
+   * funds are recoverable on-chain, but only by someone who knows to go
+   * looking, which is not a position to put a user in.
    */
   async unlinkWallet(userId: string) {
+    const live = await this.prisma.wagerParticipant.count({
+      where: {
+        userId,
+        wager: { status: { in: ['PENDING_FUNDING', 'ACTIVE', 'DISPUTED'] } },
+      },
+    });
+    if (live > 0) {
+      throw new BadRequestException(
+        'You have wagers still open on-chain. Settle or cancel them before unlinking this wallet — payouts go to the wallet that staked.',
+      );
+    }
+
     const user = await this.prisma.user.update({
       where: { id: userId },
       data: { web3Address: null },

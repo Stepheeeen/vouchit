@@ -164,6 +164,31 @@ export default function SettingsPage() {
   };
 
   const [isSigningOutAll, setIsSigningOutAll] = useState(false);
+  const [isUnlinking, setIsUnlinking] = useState(false);
+
+  /**
+   * Remove the wallet from the account.
+   *
+   * The API refuses while a wager is live, because payouts go to the wallet
+   * that staked and the app's on-chain checks are keyed to this field. That
+   * refusal is shown as-is rather than being softened into a generic failure.
+   */
+  const handleUnlinkWallet = async () => {
+    if (isUnlinking) return;
+    setIsUnlinking(true);
+    try {
+      const { web3Api, userApi } = await import("@/lib/api");
+      await web3Api.unlinkWallet();
+      setUser(await userApi.getProfile());
+      const { toast } = await import("sonner");
+      toast.success("Wallet unlinked.");
+    } catch (err: any) {
+      const { toast } = await import("sonner");
+      toast.error(err?.message || "Could not unlink that wallet.");
+    } finally {
+      setIsUnlinking(false);
+    }
+  };
 
   const handleSignOutEverywhere = async () => {
     if (isSigningOutAll) return;
@@ -749,6 +774,37 @@ export default function SettingsPage() {
                       {user.web3Address ? "Linked" : "Not Linked"}
                     </span>
                   </SettingRow>
+                  {/* This row stated the wallet was linked and offered no way
+                      to change it, so connecting the wrong one — or wanting to
+                      move from an extension to a passkey — was a dead end.
+                      Distinct from Disconnect on the wallet page: that ends the
+                      browser session, this removes the payout address from the
+                      account. */}
+                  {user.web3Address && (
+                    <div className="pt-4 mt-2 border-t border-[var(--border)] flex flex-col gap-3">
+                      <div className="flex flex-col gap-1">
+                        <p className="text-xs font-semibold text-[var(--foreground)]">
+                          Linked wallet
+                        </p>
+                        <p className="font-mono text-[11px] text-[var(--muted-foreground)] break-all">
+                          {user.web3Address}
+                        </p>
+                        <p className="text-[11px] text-[var(--muted-foreground)] leading-relaxed">
+                          Winnings are paid to this address by the escrow contract. Unlinking does
+                          not move any money — it only stops Vouchit associating this wallet with
+                          your account. You can link a different one afterwards.
+                        </p>
+                      </div>
+                      <button
+                        onClick={handleUnlinkWallet}
+                        disabled={isUnlinking}
+                        className="self-start text-xs font-semibold px-4 py-2 rounded-xl border border-[var(--border)] hover:bg-[var(--muted)] transition-colors disabled:opacity-60 flex items-center gap-2"
+                      >
+                        {isUnlinking && <Loader2 className="h-3.5 w-3.5 animate-spin" />}
+                        {isUnlinking ? "Unlinking…" : "Unlink this wallet"}
+                      </button>
+                    </div>
+                  )}
                 </div>
 
                 <div className="bg-white border border-[var(--border)] rounded-2xl p-6" style={{ boxShadow: "var(--shadow-sm)" }}>
