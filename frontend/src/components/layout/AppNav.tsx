@@ -38,6 +38,7 @@ export default function AppNav() {
 
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
+  const [showAccountMenu, setShowAccountMenu] = useState(false);
   const [unreadCount, setUnreadCount] = useState(0);
 
   const loadNotifications = async () => {
@@ -145,37 +146,47 @@ export default function AppNav() {
   return (
     <>
       {/* ── DESKTOP TOP NAV (md+) ─────────────────────────── */}
-      <header className="hidden md:flex fixed top-0 left-0 right-0 z-30 w-full bg-white/90 backdrop-blur-md border-b border-[var(--border)] items-center gap-0">
+      {/*
+        The bar carried five separate controls on the right — wallet, New,
+        bell, a settings gear and the avatar — with hard vertical rules
+        boxing off the brand and the actions. It read as a crowded toolbar.
+        Settings now lives inside the account menu where it belongs, the
+        rules are gone, and the links sit in the middle so the two ends
+        stay light.
+      */}
+      <header className="hidden md:flex fixed top-0 left-0 right-0 z-30 w-full h-[var(--desktop-nav-h)] bg-white/80 backdrop-blur-xl border-b border-[var(--border)] items-center px-5 lg:px-7 gap-4">
         {/* Brand */}
-        <Link href="/" className="flex items-center px-6 py-4 border-r border-[var(--border)] shrink-0">
-          <img src="/logo-full-colored.png" alt="Vouchit Logo" className="h-10 w-auto object-contain" />
+        <Link href="/" className="flex items-center shrink-0">
+          <img src="/logo-full-colored.png" alt="Vouchit Logo" className="h-8 w-auto object-contain" />
         </Link>
 
         {/* Nav links */}
-        <nav className="flex items-center gap-1 md:px-2 lg:px-4 flex-1 overflow-x-auto no-scrollbar">
+        <nav className="flex items-center gap-0.5 flex-1 justify-center overflow-x-auto no-scrollbar">
           {links.filter(item => item.href !== "/profile").map((item) => {
             const active = isActive(item.href);
             return (
               <Link
                 key={item.href}
                 href={item.href}
-                className={`flex items-center gap-2 md:px-2.5 lg:px-4 py-2.5 rounded-xl text-sm font-semibold transition-all whitespace-nowrap shrink-0 ${
+                aria-current={active ? "page" : undefined}
+                className={`flex items-center gap-2 px-3 lg:px-3.5 py-2 rounded-lg text-sm font-medium transition-colors whitespace-nowrap shrink-0 ${
                   active
-                    ? "bg-[var(--muted)] text-[var(--primary)]"
-                    : "text-[var(--muted-foreground)] hover:bg-[var(--muted)] hover:text-[var(--foreground)]"
+                    ? "bg-[var(--muted)] text-[var(--foreground)] font-semibold"
+                    : "text-[var(--muted-foreground)] hover:bg-[var(--muted)]/60 hover:text-[var(--foreground)]"
                 }`}
               >
+                {/* The label was rendered twice, once per breakpoint, with the
+                    same text — and an active pill plus a separate active dot
+                    said the same thing twice over. */}
                 <item.icon className="h-4 w-4 shrink-0" />
-                <span className="hidden lg:inline">{item.label}</span>
-                <span className="lg:hidden">{item.label}</span>
-                {active && <span className="ml-1 h-1.5 w-1.5 rounded-full bg-[var(--primary)] shrink-0" />}
+                <span>{item.label}</span>
               </Link>
             );
           })}
         </nav>
 
         {/* Right actions */}
-        <div className="flex items-center gap-2 md:px-3 lg:px-6 py-3 border-l border-[var(--border)] shrink-0">
+        <div className="flex items-center gap-2 shrink-0">
           {/* Web3 Wallet Connect — `user.web3Address` is the wallet linked to this
               account server-side and survives reload; `isConnected` only reflects
               whether the injected provider currently grants live permission in
@@ -298,26 +309,68 @@ export default function AppNav() {
             )}
           </div>
 
-          {/* Settings icon */}
-          <Link href="/settings">
-            <button className="h-9 w-9 rounded-full bg-[var(--muted)] flex items-center justify-center hover:bg-[var(--border)] transition-colors shrink-0">
-              <Settings className="h-4 w-4 text-[var(--muted-foreground)] shrink-0" />
-            </button>
-          </Link>
-
-          {/* Avatar dropdown */}
-          <Link href="/profile">
-            <button className="flex items-center gap-2 lg:pl-2 lg:pr-3 lg:py-1.5 md:p-1 rounded-full border border-[var(--border)] bg-[var(--surface)] hover:bg-[var(--muted)] transition-colors shrink-0">
+          {/* Account menu. The avatar had a chevron suggesting a dropdown but
+              was only a link to /profile, while Settings sat beside it as a
+              fifth separate control. One menu now holds both. */}
+          <div className="relative">
+            <button
+              onClick={() => setShowAccountMenu(!showAccountMenu)}
+              aria-haspopup="menu"
+              aria-expanded={showAccountMenu}
+              className="flex items-center gap-2 pl-1 pr-1 lg:pr-2.5 py-1 rounded-full border border-[var(--border)] bg-white hover:bg-[var(--muted)] transition-colors shrink-0"
+            >
               <div
                 className="h-7 w-7 rounded-full flex items-center justify-center text-white font-bold text-xs shrink-0"
                 style={{ background: "linear-gradient(135deg,#0d9488,#115e59)" }}
               >
                 {initials}
               </div>
-              <span className="hidden lg:block text-xs font-semibold text-[var(--foreground)] whitespace-nowrap">{name}</span>
-              <ChevronDown className="hidden lg:block h-3.5 w-3.5 text-[var(--muted-foreground)] shrink-0" />
+              <span className="hidden lg:block text-xs font-semibold text-[var(--foreground)] whitespace-nowrap max-w-[9rem] truncate">
+                {name}
+              </span>
+              <ChevronDown
+                className={`hidden lg:block h-3.5 w-3.5 text-[var(--muted-foreground)] shrink-0 transition-transform ${showAccountMenu ? "rotate-180" : ""}`}
+              />
             </button>
-          </Link>
+
+            {showAccountMenu && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setShowAccountMenu(false)} />
+                <div
+                  role="menu"
+                  className="absolute right-0 mt-2 w-56 bg-white border border-[var(--border)] rounded-2xl shadow-xl z-50 overflow-hidden py-1"
+                >
+                  <div className="px-4 py-3 border-b border-[var(--border)]">
+                    <p className="text-sm font-semibold truncate">{name}</p>
+                    {user?.email && (
+                      <p className="text-xs text-[var(--muted-foreground)] truncate">{user.email}</p>
+                    )}
+                  </div>
+                  <Link
+                    href="/profile"
+                    onClick={() => setShowAccountMenu(false)}
+                    className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium hover:bg-[var(--muted)] transition-colors"
+                  >
+                    <User className="h-4 w-4 text-[var(--muted-foreground)]" /> Profile
+                  </Link>
+                  <Link
+                    href="/wallet"
+                    onClick={() => setShowAccountMenu(false)}
+                    className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium hover:bg-[var(--muted)] transition-colors"
+                  >
+                    <Wallet className="h-4 w-4 text-[var(--muted-foreground)]" /> Wallet
+                  </Link>
+                  <Link
+                    href="/settings"
+                    onClick={() => setShowAccountMenu(false)}
+                    className="flex items-center gap-3 px-4 py-2.5 text-sm font-medium hover:bg-[var(--muted)] transition-colors"
+                  >
+                    <Settings className="h-4 w-4 text-[var(--muted-foreground)]" /> Settings
+                  </Link>
+                </div>
+              </>
+            )}
+          </div>
         </div>
       </header>
 

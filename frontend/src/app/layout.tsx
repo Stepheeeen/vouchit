@@ -53,7 +53,7 @@ export default function RootLayout({
           <NavWrapper />
 
           {/* Page content — offset for fixed desktop top nav + mobile bottom nav */}
-          <div className="flex-1 w-full flex flex-col pb-[68px] md:pb-0 md:pt-[65px]">
+          <div className="flex-1 w-full flex flex-col pb-[var(--mobile-nav-h)] md:pb-0 md:pt-[var(--desktop-nav-h)]">
             {children}
           </div>
           <Toaster richColors closeButton position="top-right" />

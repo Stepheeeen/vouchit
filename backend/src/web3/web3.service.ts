@@ -1,7 +1,10 @@
 import { Injectable, BadRequestException, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { verifyMessage, JsonRpcProvider, Contract, Wallet, isAddress } from 'ethers';
+import { createPublicClient, http } from 'viem';
+import { base, baseSepolia } from 'viem/chains';
 import { VOUCHIT_ESCROW_ABI, OnChainWagerStatus } from './escrow.abi';
+import { getChainId } from './tokens';
 
 @Injectable()
 export class Web3Service {
@@ -10,12 +13,65 @@ export class Web3Service {
   /**
    * Verify an EVM signature for a given message
    */
-  verifySignature(address: string, signature: string, message: string): boolean {
+  /**
+   * Verify an EVM signature, for a key-pair wallet OR a smart contract wallet.
+   *
+   * This used to be `ethers.verifyMessage()` alone, which performs ECDSA
+   * public-key recovery. That cannot work for the wallet this app actually
+   * ships: the connector is configured `smartWalletOnly`, so every passkey
+   * user gets a Coinbase Smart Wallet — an ERC-4337 contract account. Those
+   * do not produce ECDSA signatures; they produce ERC-1271 signatures, which
+   * are validated by CALLING the wallet contract, not by recovering a key
+   * from them. Recovery either threw or returned an unrelated address, so
+   * linking a passkey wallet failed with "Invalid signature" every time.
+   *
+   * There is a second trap behind that one. A Coinbase Smart Wallet is
+   * *counterfactual* until its first transaction: the address is known and
+   * fundable, but no contract exists at it yet, so there is nothing to call
+   * `isValidSignature` on. ERC-6492 covers that by wrapping the signature
+   * with the deployment data needed to simulate the account into existence.
+   * A brand-new user — exactly the person signing up — is always in this
+   * state, so handling ERC-1271 without ERC-6492 would still fail for most
+   * of them.
+   *
+   * viem's `verifyMessage` handles all three cases (ECDSA, ERC-1271,
+   * ERC-6492) through the universal signature validator, so the check is
+   * delegated to it. The ECDSA path is tried locally first to avoid an RPC
+   * round-trip for browser-extension wallets.
+   */
+  async verifySignature(address: string, signature: string, message: string): Promise<boolean> {
+    // Fast path: a plain key-pair wallet needs no network call.
     try {
-      const recoveredAddress = verifyMessage(message, signature);
-      return recoveredAddress.toLowerCase() === address.toLowerCase();
+      if (verifyMessage(message, signature).toLowerCase() === address.toLowerCase()) {
+        return true;
+      }
+    } catch {
+      // Not an ECDSA signature — fall through to the on-chain check.
+    }
+
+    const rpcUrl = process.env.WEB3_RPC_URL;
+    // Fail closed rather than reaching for viem's bundled public endpoint.
+    // Contract verification is a real RPC call, and an unconfigured server
+    // silently borrowing someone else's node is both unreliable and a
+    // surprise dependency — the same server cannot read the escrow without
+    // this variable anyway.
+    if (!rpcUrl) {
+      console.error(
+        '[Web3Service] Cannot verify a contract-wallet signature: WEB3_RPC_URL is not set.',
+      );
+      return false;
+    }
+
+    const chain = getChainId() === base.id ? base : baseSepolia;
+    try {
+      const client = createPublicClient({ chain, transport: http(rpcUrl) });
+      return await client.verifyMessage({
+        address: address as `0x${string}`,
+        message,
+        signature: signature as `0x${string}`,
+      });
     } catch (error) {
-      console.error('[Web3Service] Signature verification failed:', error);
+      console.error('[Web3Service] Smart-wallet signature verification failed:', error);
       return false;
     }
   }
@@ -29,7 +85,7 @@ export class Web3Service {
     }
 
     const expectedMessage = `Sign to verify ownership of wallet ${address} for Vouchit account ${userId}`;
-    const isValid = this.verifySignature(address, signature, expectedMessage);
+    const isValid = await this.verifySignature(address, signature, expectedMessage);
 
     if (!isValid) {
       throw new BadRequestException('Invalid signature');

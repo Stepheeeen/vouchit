@@ -7,6 +7,11 @@
      "Lock stake in escrow" button on phones. */
   --mobile-nav-h: 68px;
 
+  /* Height of the desktop header in AppNav. Eight files hardcoded 65px
+     against it, so changing the header's height silently left a gap or an
+     overlap in all of them. */
+  --desktop-nav-h: 64px;
+
   /* Premium Light Theme — Vouchit (White & Teal) */
   --background: #f0fafa;        /* Very light teal-gray wash */
   --surface: #ffffff;
