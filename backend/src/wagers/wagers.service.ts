@@ -8,6 +8,27 @@ import { PUBLIC_USER_SELECT } from '../common/user-select';
 import { VerificationService, TIER_LIMITS } from '../web3/verification.service';
 import { formatTokenAmount } from '../web3/tokens';
 
+/**
+ * Categories Explore can filter by.
+ *
+ * Explore shipped with these filters while nothing could set a category, so
+ * every one of them matched nothing. Validated against a list rather than
+ * stored free-form, or the filters drift out of agreement again.
+ */
+export const WAGER_CATEGORIES = [
+  'SPORTS',
+  'CRYPTO',
+  'LIFESTYLE',
+  'ENTERTAINMENT',
+  'FINANCE',
+  'OTHER',
+] as const;
+
+function normaliseCategory(value?: string): string {
+  const upper = String(value ?? '').trim().toUpperCase();
+  return (WAGER_CATEGORIES as readonly string[]).includes(upper) ? upper : 'OTHER';
+}
+
 @Injectable()
 export class WagersService {
   constructor(
@@ -58,6 +79,7 @@ export class WagersService {
     contractWagerId: string,
     isSymmetric?: boolean,
     expiryDays?: number,
+    category?: string,
   ) {
     const token = findToken(tokenAddress);
     if (!token) {
@@ -139,6 +161,10 @@ export class WagersService {
       data: {
         creatorId: userId,
         description,
+        category: normaliseCategory(category),
+        // Mirrored from the escrow entry, never taken from the client: the
+        // chain decides who may join, so the listing must agree with it.
+        challengerAddress: isOpenWager ? null : onChain.challenger,
         // Only the creator has staked so far; the challenger's match doubles it.
         totalPot: stakeAmount.toString(),
         status: 'PENDING_FUNDING',

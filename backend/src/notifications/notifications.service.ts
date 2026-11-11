@@ -33,7 +33,40 @@ export class NotificationsService {
     });
   }
 
+  /**
+   * Which preference governs which notification type.
+   *
+   * Types not listed here are account-level messages a user cannot opt out
+   * of — security and settlement outcomes they need to see.
+   */
+  private static readonly PREFERENCE_FOR_TYPE: Record<string, string> = {
+    WAGER_CREATED: 'notifyWager',
+    WAGER_JOINED: 'notifyWager',
+    WAGER_EXPIRED: 'notifyWager',
+    WAGER_SETTLED: 'notifyPayout',
+    PAYOUT: 'notifyPayout',
+    DISPUTE_OPENED: 'notifyDispute',
+    DISPUTE_RESOLVED: 'notifyDispute',
+    MARKETING: 'notifyMarketing',
+  };
+
+  /**
+   * Record a notification, unless the user switched that category off.
+   *
+   * The preference toggles were localStorage-only, so turning a category off
+   * changed what the switch looked like and nothing else — every notification
+   * still arrived.
+   */
   async createNotification(userId: string, type: string, message: string) {
+    const preference = NotificationsService.PREFERENCE_FOR_TYPE[type];
+    if (preference) {
+      const user = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { [preference]: true } as any,
+      });
+      if (user && (user as any)[preference] === false) return null;
+    }
+
     return this.prisma.notification.create({
       data: {
         userId,

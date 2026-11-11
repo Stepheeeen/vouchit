@@ -18,6 +18,8 @@ export class WagersController {
       tokenAddress: string;
       isSymmetric?: boolean;
       expiryDays?: number;
+      /** One of WAGER_CATEGORIES; anything else is stored as OTHER. */
+      category?: string;
       /** Id of an already-mined escrow entry, verified on-chain before we accept it. */
       contractWagerId: string;
     },
@@ -30,6 +32,7 @@ export class WagersController {
       body.contractWagerId,
       body.isSymmetric,
       body.expiryDays,
+      body.category,
     );
   }
 

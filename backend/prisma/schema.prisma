@@ -17,6 +17,10 @@ model User {
   emailVerified Boolean  @default(false)
   otp          String?
   otpExpiresAt DateTime?
+  // Wrong guesses against the current code. At the limit the code is
+  // destroyed, which is what stops a six-digit secret from being walked
+  // through end to end.
+  otpAttempts  Int       @default(0)
   web3Address  String?   @unique
   // Tiering is web3-native now; BVN/NIN identity checks are gone. The tier
   // gates stake size and wager privileges — not withdrawals, which we cannot
@@ -25,6 +29,33 @@ model User {
   // How the current tier was earned, e.g. 'WALLET_AGE', 'COINBASE_ATTESTATION'.
   verificationMethod String?
   role         String    @default("USER") // "USER", "ADMIN"
+
+  // Chosen handle. Without one every profile rendered as "Vouchit user", so
+  // nobody could tell who they were wagering against. Not marked @unique:
+  // on MongoDB an optional unique field treats every null as a duplicate, so
+  // the index would block signups for anyone who hasn't picked a handle yet
+  // (the same trap documented on web3Address). Uniqueness is enforced in
+  // UsersService instead.
+  username     String?
+
+  // Preferences. These used to live in localStorage only, which meant a user
+  // could switch "public profile" off, believe they were hidden, and stay
+  // fully public — the setting never reached the server at all.
+  twoFactorEnabled   Boolean @default(false)
+  loginAlertsEnabled Boolean @default(true)
+  notifyWager        Boolean @default(true)
+  notifyPayout       Boolean @default(true)
+  notifyDispute      Boolean @default(true)
+  notifyMarketing    Boolean @default(false)
+  notifyEmail        Boolean @default(true)
+  publicProfile      Boolean @default(true)
+  showOnLeaderboard  Boolean @default(true)
+
+  // Every JWT issued before this instant is refused. Without it a stolen
+  // 7-day token stayed valid until it expired, and "Sign out of all devices"
+  // could not do anything at all.
+  sessionsValidFrom  DateTime @default(now())
+
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
@@ -46,6 +77,12 @@ model Wager {
   status          String   // 'PENDING_FUNDING', 'ACTIVE', 'SETTLED', 'DISPUTED', 'CANCELLED', 'EXPIRED'
   winnerId        String?  @db.ObjectId // Set when settled
   isSymmetric     Boolean  @default(true)
+  // Explore filters by category, but nothing could ever set one, so six
+  // filters matched nothing forever.
+  category        String   @default("OTHER")
+  // The opponent this wager is aimed at, mirrored from the escrow entry's
+  // `challenger`. The zero address (or null) means anyone may join.
+  challengerAddress String?
   contractWagerId String?  @unique
   tokenAddress    String
   tokenSymbol     String

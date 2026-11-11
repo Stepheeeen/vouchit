@@ -2,6 +2,7 @@ import { Test, type TestingModule } from '@nestjs/testing';
 import { NotFoundException } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { PrismaService } from '../prisma/prisma.service';
+import { AuthService } from '../auth/auth.service';
 
 /**
  * Unit tests with Prisma mocked. The suite previously registered UsersService
@@ -16,7 +17,13 @@ describe('UsersService', () => {
     prisma = { user: { findUnique: jest.fn(), update: jest.fn() } };
 
     const module: TestingModule = await Test.createTestingModule({
-      providers: [UsersService, { provide: PrismaService, useValue: prisma }],
+      providers: [
+        UsersService,
+        { provide: PrismaService, useValue: prisma },
+        // Password changes delegate to AuthService so the strength rule and
+        // session revocation apply on every route that can change one.
+        { provide: AuthService, useValue: { changePassword: jest.fn() } },
+      ],
     }).compile();
 
     service = module.get<UsersService>(UsersService);

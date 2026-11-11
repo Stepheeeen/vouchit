@@ -1,4 +1,4 @@
-import { Controller, Get, Param, Patch, Post, Body, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Param, Patch, Post, Delete, Body, HttpCode, HttpStatus, UseGuards, Request } from '@nestjs/common';
 import { UsersService } from './users.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
 
@@ -16,9 +16,28 @@ export class UsersController {
   @Patch('me')
   async updateProfile(
     @Request() req: any,
-    @Body() body: { displayName?: string; bio?: string; avatarUrl?: string },
+    @Body() body: { displayName?: string; bio?: string; avatarUrl?: string; username?: string },
   ) {
     return this.usersService.updateMe(req.user.userId, body);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Get('me/preferences')
+  async getPreferences(@Request() req: any) {
+    return this.usersService.getPreferences(req.user.userId);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Patch('me/preferences')
+  async updatePreferences(@Request() req: any, @Body() body: Record<string, unknown>) {
+    return this.usersService.updatePreferences(req.user.userId, body);
+  }
+
+  @UseGuards(JwtAuthGuard)
+  @Delete('me')
+  @HttpCode(HttpStatus.OK)
+  async deleteAccount(@Request() req: any, @Body() body: { password: string }) {
+    return this.usersService.deleteAccount(req.user.userId, body?.password);
   }
 
   @UseGuards(JwtAuthGuard)

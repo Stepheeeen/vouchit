@@ -79,15 +79,74 @@ describe('AuthService', () => {
         emailVerified: false,
         otp: '123456',
         otpExpiresAt: new Date(Date.now() + 60_000),
+        otpAttempts: 0,
         password: '$2b$10$notarealhash',
       });
-      prisma.user.update.mockResolvedValue({});
+      // The row AFTER verification is what gets signed, so it must carry the
+      // session generation the token is pinned to.
+      prisma.user.update.mockResolvedValue({
+        id: 'u1',
+        email: 'a@example.com',
+        role: 'USER',
+        emailVerified: true,
+        sessionsValidFrom: new Date(),
+        password: '$2b$10$notarealhash',
+        otp: null,
+      });
 
       const result: any = await service.verifyEmail('a@example.com', '123456');
 
       expect(result.accessToken).toBe('signed.jwt.token');
       expect(result.user).not.toHaveProperty('password');
       expect(result.user).not.toHaveProperty('otp');
+    });
+
+    it('burns the code after repeated wrong guesses', async () => {
+      // A six-digit secret with unlimited guesses is not a secret. At the
+      // limit the code is destroyed rather than left to be walked through.
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'u1',
+        email: 'a@example.com',
+        emailVerified: false,
+        otp: '123456',
+        otpExpiresAt: new Date(Date.now() + 60_000),
+        otpAttempts: 4,
+      });
+      prisma.user.update.mockResolvedValue({});
+
+      await expect(service.verifyEmail('a@example.com', '000000')).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+      expect(prisma.user.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ otp: null, otpExpiresAt: null }),
+        }),
+      );
+    });
+  });
+
+  describe('register', () => {
+    it('answers identically for a taken address and a fresh one', async () => {
+      // The differential reply ("User already exists" vs "Registration
+      // successful") turned signup into a user-directory oracle.
+      prisma.user.findUnique.mockResolvedValue({
+        id: 'u1',
+        email: 'taken@example.com',
+        emailVerified: true,
+      });
+      const taken: any = await service.register('taken@example.com', 'Correct-Horse-9');
+
+      prisma.user.findUnique.mockResolvedValue(null);
+      prisma.user.create = jest.fn().mockResolvedValue({ id: 'u2' });
+      const fresh: any = await service.register('fresh@example.com', 'Correct-Horse-9');
+
+      expect(taken.message).toBe(fresh.message);
+      expect(taken.success).toBe(fresh.success);
+    });
+
+    it('refuses a password that cannot protect an account', async () => {
+      // A single character was accepted before this.
+      await expect(service.register('a@example.com', 'a')).rejects.toThrow(/at least/i);
     });
   });
 });
