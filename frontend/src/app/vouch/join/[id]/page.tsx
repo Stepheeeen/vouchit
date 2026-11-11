@@ -161,7 +161,7 @@ export default function JoinVouchPage() {
 
   return (
     <div className="flex-1 flex flex-col bg-[var(--background)]">
-      <header className="sticky top-0 md:top-[var(--desktop-nav-h)] z-20 bg-[var(--background)]/80 backdrop-blur-md border-b border-[var(--border)] px-4 py-3 flex items-center gap-3">
+      <header className="z-10 bg-[var(--background)] border-b border-[var(--border)] px-4 py-3 flex items-center gap-3">
         <Link href="/explore">
           <button className="h-8 w-8 rounded-full bg-[var(--muted)] flex items-center justify-center hover:bg-[var(--border)] transition-colors">
             <ArrowLeft className="h-4 w-4 text-[var(--foreground)]" />

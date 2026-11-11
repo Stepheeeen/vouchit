@@ -120,7 +120,7 @@ export default function AdminDisputesPage() {
   return (
     <div className="flex-1 flex flex-col bg-[var(--background)]">
       {/* Header */}
-      <header className="sticky top-0 md:top-[var(--desktop-nav-h)] z-20 bg-white/80 backdrop-blur-md border-b border-[var(--border)] px-6 py-4 flex items-center gap-4">
+      <header className="z-10 bg-white border-b border-[var(--border)] px-6 py-4 flex items-center gap-4">
         <Link href="/dashboard">
           <button className="h-9 w-9 rounded-full bg-[var(--muted)] flex items-center justify-center hover:bg-[var(--border)] transition-colors">
             <ArrowLeft className="h-5 w-5 text-[var(--foreground)]" />

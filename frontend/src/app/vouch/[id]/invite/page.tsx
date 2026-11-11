@@ -63,10 +63,10 @@ export default function InvitePage() {
 
   return (
     <main className="flex-1 flex flex-col w-full max-w-7xl mx-auto md:py-8 tracking-tight">
-      <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full md:bg-[var(--background)] md:border md:border-[var(--border)] overflow-hidden">
+      <div className="flex-1 flex flex-col max-w-2xl mx-auto w-full md:bg-[var(--background)] md:border md:border-[var(--border)]">
 
         {/* Header */}
-        <header className="sticky top-0 md:top-[var(--desktop-nav-h)] z-10 bg-[var(--background)]/90 backdrop-blur-md border-b border-[var(--border)] flex items-center p-4">
+        <header className="z-10 bg-[var(--background)] border-b border-[var(--border)] flex items-center p-4">
           <Link href="/dashboard" className="mr-4">
             <Button variant="ghost" size="icon" className="h-8 w-8 rounded-full">
               <ArrowLeft className="h-5 w-5" />

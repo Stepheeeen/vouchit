@@ -60,7 +60,7 @@ export default function LeaderboardPage() {
   if (leaders.length === 0) {
     return (
       <div className="flex-1 flex flex-col">
-        <div className="sticky top-0 z-20 bg-[var(--background)]/80 backdrop-blur-md border-b border-[var(--border)] px-4 py-3 flex items-center gap-3 md:hidden">
+        <div className="bg-[var(--background)] border-b border-[var(--border)] px-4 py-3 flex items-center gap-3 md:hidden">
           <Link href="/dashboard">
             <button className="h-8 w-8 rounded-full bg-[var(--muted)] flex items-center justify-center">
               <ArrowLeft className="h-4 w-4" />
@@ -86,7 +86,7 @@ export default function LeaderboardPage() {
   return (
     <div className="flex-1 flex flex-col">
       {/* Mobile sub-header */}
-      <div className="sticky top-0 z-20 bg-[var(--background)]/80 backdrop-blur-md border-b border-[var(--border)] px-4 py-3 flex items-center gap-3 md:hidden">
+      <div className="bg-[var(--background)] border-b border-[var(--border)] px-4 py-3 flex items-center gap-3 md:hidden">
         <Link href="/dashboard">
           <button className="h-8 w-8 rounded-full bg-[var(--muted)] flex items-center justify-center">
             <ArrowLeft className="h-4 w-4" />
