@@ -1,6 +1,6 @@
 import { describe, it } from "node:test";
 import assert from "node:assert/strict";
-import { buildWalletOptions, classifyConnector } from "./wallet-options.ts";
+import { applyReachability, buildWalletOptions, classifyConnector } from "./wallet-options.ts";
 
 describe("wallet picker options", () => {
   const coinbase = { id: "coinbaseWalletSDK", name: "Coinbase Wallet" };
@@ -83,5 +83,47 @@ describe("duplicate connectors", () => {
     ]);
     assert.equal(options.filter((o) => o.kind === "passkey").length, 1);
     assert.equal(options.filter((o) => o.kind === "mobile").length, 1);
+  });
+});
+
+describe("when Coinbase is unreachable", () => {
+  // Coinbase restricts access in several countries, Nigeria among them, and
+  // a tester reported needing a VPN. The passkey route opens a popup on
+  // keys.coinbase.com, so for those users it is the one option that cannot
+  // work — and it was the one labelled "Recommended" and listed first.
+  const coinbase = { id: "coinbaseWalletSDK", name: "Coinbase Wallet" };
+  const wc = { id: "walletConnect", name: "WalletConnect" };
+  const metamask = { id: "io.metamask", name: "MetaMask" };
+  const all = buildWalletOptions([coinbase, wc, metamask]);
+
+  it("leads with passkey when Coinbase is reachable", () => {
+    assert.equal(applyReachability(all, true)[0].kind, "passkey");
+  });
+
+  it("stops leading with it when Coinbase is blocked", () => {
+    const ordered = applyReachability(all, false);
+    assert.notEqual(ordered[0].kind, "passkey");
+    assert.equal(ordered[0].kind, "mobile");
+  });
+
+  it("keeps the passkey option listed rather than hiding it", () => {
+    // Someone on a VPN can still use it, and silently removing an option is
+    // its own kind of confusing.
+    const ordered = applyReachability(all, false);
+    assert.ok(ordered.some((o) => o.kind === "passkey"));
+    assert.equal(ordered.length, all.length);
+  });
+
+  it("never drops a working option while demoting a blocked one", () => {
+    const ordered = applyReachability(all, false);
+    assert.deepEqual(
+      [...ordered].map((o) => o.id).sort(),
+      [...all].map((o) => o.id).sort(),
+    );
+  });
+
+  it("does nothing when there is no passkey option to demote", () => {
+    const noCoinbase = buildWalletOptions([wc, metamask]);
+    assert.deepEqual(applyReachability(noCoinbase, false), noCoinbase);
   });
 });

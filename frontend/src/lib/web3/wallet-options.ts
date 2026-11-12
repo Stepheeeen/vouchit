@@ -79,3 +79,50 @@ function normaliseName(name: string) {
 function isGeneric(c: { id: string; name: string }) {
   return /^(injected|browser wallet|unknown)$/i.test(c.name.trim());
 }
+
+/**
+ * Whether Coinbase is reachable from this browser.
+ *
+ * The passkey route opens a popup on keys.coinbase.com. Coinbase restricts
+ * access in a number of countries — Nigeria among them, which is the market
+ * this is built for — and a tester reported needing a VPN to reach it at all.
+ * Leading with "Recommended" on the one option that cannot work for them is
+ * the worst thing the picker could do.
+ *
+ * Detection is deliberately modest about itself. A network-level block (DNS
+ * or TCP) makes this throw and is caught; a soft block that answers with a
+ * 403 page looks identical to success through an opaque no-cors response, so
+ * it is NOT caught. That is why the picker also carries a plain warning on
+ * the passkey option regardless of what this returns — the probe improves the
+ * ordering, it does not decide whether to tell the truth.
+ */
+export async function isCoinbaseReachable(timeoutMs = 4000): Promise<boolean> {
+  if (typeof fetch !== "function") return true;
+  try {
+    await fetch("https://keys.coinbase.com/connect", {
+      mode: "no-cors",
+      cache: "no-store",
+      signal: AbortSignal.timeout(timeoutMs),
+    });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Reorder so an option that cannot work does not lead.
+ *
+ * Only demotes; it never promotes something above a route that works.
+ */
+export function applyReachability(
+  options: WalletOption[],
+  coinbaseReachable: boolean,
+): WalletOption[] {
+  if (coinbaseReachable) return options;
+  const blocked = options.filter((o) => o.kind === "passkey");
+  const rest = options.filter((o) => o.kind !== "passkey");
+  // Keep it listed rather than hiding it: a VPN user can still choose it,
+  // and silently removing an option is its own kind of confusing.
+  return [...rest, ...blocked];
+}

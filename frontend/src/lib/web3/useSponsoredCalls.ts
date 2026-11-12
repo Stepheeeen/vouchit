@@ -70,13 +70,36 @@ export function useSponsoredCalls() {
    * something a block explorer will show.
    */
   const sendBatch = useCallback(
-    async (calls: Call[]) => {
-      const { id } = await sendCalls(config, {
-        calls,
-        ...(isSponsored && PAYMASTER_URL
-          ? { capabilities: { paymasterService: { url: PAYMASTER_URL } } }
-          : {}),
-      });
+    async (calls: Call[], onUnsponsored?: () => void) => {
+      /**
+       * Try sponsored, fall back to the user paying.
+       *
+       * The paymaster is a Coinbase endpoint, and a tester reported being
+       * unable to reach Coinbase at all without a VPN. Before this, an
+       * unreachable paymaster did not merely cost someone their free gas —
+       * `sendCalls` rejected and the whole wager failed, with no hint that
+       * the cause was a gas service rather than their stake or their wallet.
+       * Paying your own fee is a worse outcome than not paying it; being
+       * unable to place a wager is a far worse one than either.
+       */
+      let id: string;
+      if (isSponsored && PAYMASTER_URL) {
+        try {
+          ({ id } = await sendCalls(config, {
+            calls,
+            capabilities: { paymasterService: { url: PAYMASTER_URL } },
+          }));
+        } catch (err: any) {
+          // A refusal by the user is a decision, not a fault: do not quietly
+          // re-prompt them for the same thing without sponsorship.
+          if (/reject|denied|cancel/i.test(String(err?.message ?? ""))) throw err;
+          console.warn("[Vouchit] Gas sponsorship unavailable, continuing unsponsored:", err);
+          onUnsponsored?.();
+          ({ id } = await sendCalls(config, { calls }));
+        }
+      } else {
+        ({ id } = await sendCalls(config, { calls }));
+      }
 
       const status = await waitForCallsStatus(config, { id, timeout: 120_000 });
       if (status.status !== "success") {

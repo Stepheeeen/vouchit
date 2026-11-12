@@ -72,6 +72,60 @@ export function useGasBalance() {
 const PRICE_TTL_MS = 60_000;
 const priceCache = new Map<string, { usd: number; at: number }>();
 
+/**
+ * Where to ask what a token is worth.
+ *
+ * Coinbase used to be the only source. A tester reported being unable to
+ * reach Coinbase at all without a VPN — they restrict access in several
+ * countries, Nigeria among them, which is the market this is built for. A
+ * single-source lookup meant every dollar figure silently vanished for those
+ * users. CoinGecko leads because it is reachable where Coinbase is not and
+ * needs no key; Coinbase stays as a second opinion rather than the authority.
+ *
+ * Prices here are indicative only — nothing settles against them — so a total
+ * failure degrades to showing no approximation rather than blocking anything.
+ */
+const COINGECKO_IDS: Record<string, string> = {
+  ETH: "ethereum",
+  WETH: "weth",
+  cbBTC: "coinbase-wrapped-btc",
+  BTC: "bitcoin",
+};
+
+async function fetchUsdPrice(symbol: string): Promise<number | null> {
+  const id = COINGECKO_IDS[symbol];
+  if (id) {
+    try {
+      const res = await fetch(
+        `https://api.coingecko.com/api/v3/simple/price?ids=${id}&vs_currencies=usd`,
+        { signal: AbortSignal.timeout(6000) },
+      );
+      if (res.ok) {
+        const body = await res.json();
+        const value = Number(body?.[id]?.usd);
+        if (Number.isFinite(value) && value > 0) return value;
+      }
+    } catch {
+      // Unreachable or slow — try the next source.
+    }
+  }
+
+  try {
+    const res = await fetch(`https://api.coinbase.com/v2/prices/${symbol}-USD/spot`, {
+      signal: AbortSignal.timeout(6000),
+    });
+    if (res.ok) {
+      const body = await res.json();
+      const value = Number(body?.data?.amount);
+      if (Number.isFinite(value) && value > 0) return value;
+    }
+  } catch {
+    // Both sources unreachable. The UI simply omits the approximation.
+  }
+
+  return null;
+}
+
 export function useUsdPrice(symbol: string | undefined) {
   const [usd, setUsd] = useState<number | null>(null);
 
@@ -93,18 +147,10 @@ export function useUsdPrice(symbol: string | undefined) {
     }
 
     (async () => {
-      try {
-        const res = await fetch(`https://api.coinbase.com/v2/prices/${symbol}-USD/spot`);
-        if (!res.ok) return;
-        const body = await res.json();
-        const parsed = Number(body?.data?.amount);
-        if (!Number.isFinite(parsed) || cancelled) return;
-        priceCache.set(symbol, { usd: parsed, at: Date.now() });
-        setUsd(parsed);
-      } catch {
-        // No price is fine — the UI just omits the approximation rather than
-        // showing a wrong one.
-      }
+      const price = await fetchUsdPrice(symbol);
+      if (price === null || cancelled) return;
+      priceCache.set(symbol, { usd: price, at: Date.now() });
+      setUsd(price);
     })();
 
     return () => {
