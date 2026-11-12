@@ -9,6 +9,11 @@ const protectedPaths = [
   '/wallet',
   '/vouch/create',
   '/vouch/join',
+  // The admin panel was not listed, so a signed-out visitor got the page
+  // shell and a client-side error rather than the login screen. The real
+  // authorisation still happens server-side on every /disputes call — this
+  // only stops an unauthenticated request rendering the panel at all.
+  '/admin',
 ];
 
 export function middleware(request: NextRequest) {
@@ -42,5 +47,6 @@ export const config = {
     '/wallet/:path*',
     '/vouch/create/:path*',
     '/vouch/join/:path*',
+    '/admin/:path*',
   ],
 };

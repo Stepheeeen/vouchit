@@ -22,28 +22,57 @@ export default function AdminDisputesPage() {
   
   const [filter, setFilter] = useState<DisputeStatus>("ALL");
   const [error, setError] = useState("");
+  // Set only when the server answered and said this account is not an admin.
+  const [denied, setDenied] = useState(false);
   
   // Resolution actions
   const [isResolving, setIsResolving] = useState(false);
   const [resolutionResult, setResolutionResult] = useState<any>(null);
   const [showConfirm, setShowConfirm] = useState<{ id: string; resolution: "WINNER_A" | "WINNER_B" | "REFUND" } | null>(null);
 
+  /**
+   * Two failures that look nothing alike were reported identically.
+   *
+   * Any rejection at all — a cold backend taking longer than the request
+   * timeout, a CORS refusal, a 500 — landed in the same `catch`, set `error`,
+   * and the gate below rendered "Access Denied: you do not have the required
+   * permissions". So a real admin whose profile call simply timed out was
+   * told they were not an admin, with no retry and nothing to indicate the
+   * backend had been asleep. The nav already distinguishes these two cases
+   * carefully; this page did not.
+   *
+   * `denied` is now set ONLY when the server answered and the role was not
+   * ADMIN. Everything else is a load failure, which is offered a retry.
+   */
   const loadData = async () => {
+    setLoading(true);
+    setError("");
     try {
       const { userApi, disputesApi } = await import("@/lib/api");
-      const [profile, list] = await Promise.all([
-        userApi.getProfile(),
-        disputesApi.getAll().catch(() => []),
-      ]);
-      
-      if (profile.role !== "ADMIN") {
-        setError("Admin access required.");
-      } else {
-        setUser(profile);
-        setDisputes(list);
+      const profile = await userApi.getProfile();
+
+      if (profile?.role !== "ADMIN") {
+        setDenied(true);
+        setUser(profile ?? null);
+        return;
+      }
+
+      setDenied(false);
+      setUser(profile);
+
+      // Kept separate from the profile call. Bundled into one `Promise.all`
+      // with `.catch(() => [])`, a 403 or an outage here was indistinguishable
+      // from "no disputes exist" — the panel showed a confident empty state
+      // over a list it had failed to fetch, which for a dispute queue means a
+      // real case waiting on us looks like an empty inbox.
+      try {
+        setDisputes(await disputesApi.getAll());
+      } catch (err: any) {
+        setDisputes([]);
+        setError(err?.message || "Could not load the dispute queue.");
       }
     } catch (err: any) {
-      setError(err.message || "Failed to load admin panel data.");
+      setError(err?.message || "Could not load the admin panel.");
     } finally {
       setLoading(false);
     }
@@ -93,16 +122,43 @@ export default function AdminDisputesPage() {
     );
   }
 
-  if (error && (!user || user.role !== "ADMIN")) {
+  if (denied) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center max-w-md mx-auto">
         <ShieldAlert className="h-16 w-16 text-[var(--danger)] shrink-0" />
-        <h1 className="font-bold text-2xl tracking-tight text-[var(--foreground)]">Access Denied</h1>
+        <h1 className="font-bold text-2xl tracking-tight text-[var(--foreground)]">Access denied</h1>
         <p className="text-sm text-[var(--muted-foreground)] leading-relaxed">
-          You do not have the required permissions to access the moderator dashboard. If you believe this is an error, please contact the administrator.
+          This account is not an administrator, so the moderator dashboard is not available.
+          {user?.email ? ` You are signed in as ${user.email}.` : ""}
+        </p>
+        <p className="text-xs text-[var(--muted-foreground)] leading-relaxed">
+          If the role was granted a moment ago, reload the page — the role is read fresh on every
+          request, so there is no need to sign out and back in.
         </p>
         <Link href="/dashboard">
-          <Button variant="outline" className="mt-2">Back to Dashboard</Button>
+          <Button variant="outline" className="mt-2">Back to dashboard</Button>
+        </Link>
+      </div>
+    );
+  }
+
+  /* A load failure is not a permissions failure. Say which it was, and offer
+     the retry that the old single error path never did. */
+  if (!user) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 text-center max-w-md mx-auto">
+        <AlertTriangle className="h-16 w-16 text-amber-500 shrink-0" />
+        <h1 className="font-bold text-2xl tracking-tight text-[var(--foreground)]">
+          Could not load the dashboard
+        </h1>
+        <p className="text-sm text-[var(--muted-foreground)] leading-relaxed">
+          {error || "The server did not respond."} This is not a permissions problem — the request
+          did not get an answer. The backend may have been asleep; the first request after a while
+          can take up to a minute.
+        </p>
+        <Button onClick={loadData} className="mt-2">Try again</Button>
+        <Link href="/dashboard">
+          <Button variant="outline">Back to dashboard</Button>
         </Link>
       </div>
     );

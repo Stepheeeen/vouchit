@@ -5,9 +5,10 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Flame, Wallet,
-  User, TrendingUp, Bell, Plus, ChevronDown, Settings, Shield, Link2, Unplug
+  User, TrendingUp, Bell, Plus, ChevronDown, Settings, Shield, Link2, Unplug, LogOut
 } from "lucide-react";
 import { useWeb3 } from "@/context/Web3Context";
+import { useSignOut } from "@/lib/useSignOut";
 
 const NAV_LINKS = [
   { href: "/dashboard",   label: "Dashboard",  icon: LayoutDashboard },
@@ -35,6 +36,7 @@ export default function AppNav() {
   // public page logged out.
   const [authState, setAuthState] = useState<"unknown" | "in" | "out">("unknown");
   const { account, isConnected, isConnecting, linkWalletToBackend, disconnectWallet } = useWeb3();
+  const signOut = useSignOut();
 
   const [notifications, setNotifications] = useState<any[]>([]);
   const [showNotifications, setShowNotifications] = useState(false);
@@ -209,27 +211,57 @@ export default function AppNav() {
               doesn't wrongly flip to "Connect Wallet" on every reload. */}
           {(() => {
             const linkedAddress: string | null = user?.web3Address || null;
-            const displayAddress = account || linkedAddress;
             const isLinked = !!linkedAddress;
+
+            /**
+             * The badge shows an address ONLY while a wallet is actually
+             * connected in this browser.
+             *
+             * It used to fall back to the account's linked address, so
+             * disconnecting changed nothing visible: the same address sat in
+             * the top bar with the same green dot, and the only hint was a
+             * hover tooltip nobody sees on a phone. People reasonably read
+             * that as the disconnect having failed.
+             *
+             * Linked-but-disconnected is a real and useful state — the payout
+             * address is still on file — but it is a state that needs an
+             * action, so it says "Reconnect" rather than impersonating a live
+             * connection. The address itself is still on the wallet page,
+             * where it belongs.
+             */
+            const connectedAddress = isConnected ? account : null;
+            const label = connectedAddress
+              ? `${connectedAddress.slice(0, 6)}...${connectedAddress.slice(-4)}`
+              : isConnecting
+              ? "Connecting..."
+              : isLinked
+              ? "Reconnect"
+              : "Connect Wallet";
+
+            const dotColor = connectedAddress
+              ? isLinked
+                ? "text-emerald-500"
+                : "text-amber-500"
+              : "text-slate-400";
+
             return (
               <button
-                onClick={linkWalletToBackend}
+                onClick={connectedAddress && isLinked ? undefined : linkWalletToBackend}
                 disabled={isConnecting}
+                {...(connectedAddress && isLinked ? { "aria-disabled": true } : {})}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-full text-xs font-semibold border border-[var(--border)] bg-white hover:bg-[var(--muted)] transition-colors shrink-0 cursor-pointer"
                 title={
-                  isLinked
-                    ? `Linked wallet: ${linkedAddress}${isConnected ? " (connected)" : " — reconnect for signing"}`
+                  connectedAddress
+                    ? isLinked
+                      ? `Connected and linked: ${connectedAddress}`
+                      : `Connected: ${connectedAddress} — not yet linked to your account`
+                    : isLinked
+                    ? `No wallet connected in this browser. ${linkedAddress} is still your payout address.`
                     : "Connect Web3 Wallet"
                 }
               >
-                <Link2 className={`h-3.5 w-3.5 ${isLinked ? "text-emerald-500" : isConnected ? "text-amber-500" : "text-slate-400"}`} />
-                <span className="hidden lg:inline text-[var(--foreground)]">
-                  {displayAddress
-                    ? `${displayAddress.slice(0, 6)}...${displayAddress.slice(-4)}`
-                    : isConnecting
-                    ? "Connecting..."
-                    : "Connect Wallet"}
-                </span>
+                <Link2 className={`h-3.5 w-3.5 ${dotColor}`} />
+                <span className="hidden lg:inline text-[var(--foreground)]">{label}</span>
               </button>
             );
           })()}
@@ -396,6 +428,20 @@ export default function AppNav() {
                       <Unplug className="h-4 w-4 text-[var(--muted-foreground)]" /> Disconnect wallet
                     </button>
                   )}
+                  {/* Signing out lived only at the bottom of Settings →
+                      Account. The account menu is the first place anyone
+                      looks for it, and it was the one session action missing
+                      from a menu that already offered to disconnect a
+                      wallet. */}
+                  <button
+                    onClick={() => {
+                      setShowAccountMenu(false);
+                      void signOut();
+                    }}
+                    className="w-full flex items-center gap-3 px-4 py-2.5 text-sm font-medium text-left border-t border-[var(--border)] text-red-600 hover:bg-red-50 transition-colors"
+                  >
+                    <LogOut className="h-4 w-4" /> Sign out
+                  </button>
                 </div>
               </>
             )}
@@ -413,15 +459,32 @@ export default function AppNav() {
           <img src="/logo-full-colored.png" alt="Vouchit" className="h-7 w-auto object-contain" />
         </Link>
         <div className="flex items-center gap-2">
+          {/* Same rule as the desktop badge: the indicator reflects a LIVE
+              connection, not the address on file. Keying it off
+              `user.web3Address` meant it stayed green after disconnecting,
+              which is the state the whole complaint was about — and on a
+              phone there is not even a tooltip to contradict it. */}
           <button
             onClick={linkWalletToBackend}
             disabled={isConnecting}
-            aria-label={user?.web3Address ? "Wallet linked" : "Connect wallet"}
+            aria-label={
+              isConnected
+                ? user?.web3Address
+                  ? "Wallet connected and linked"
+                  : "Wallet connected, not linked"
+                : user?.web3Address
+                ? "Reconnect your wallet"
+                : "Connect wallet"
+            }
             className="h-9 w-9 rounded-full bg-[var(--muted)] flex items-center justify-center"
           >
             <Link2
               className={`h-4 w-4 ${
-                user?.web3Address ? "text-emerald-500" : isConnected ? "text-amber-500" : "text-slate-400"
+                isConnected
+                  ? user?.web3Address
+                    ? "text-emerald-500"
+                    : "text-amber-500"
+                  : "text-slate-400"
               }`}
             />
           </button>
@@ -442,6 +505,16 @@ export default function AppNav() {
               <Settings className="h-4 w-4 text-[var(--muted-foreground)]" />
             </span>
           </Link>
+          {/* There is no account menu on a phone, so signing out meant
+              finding Settings and scrolling to the bottom of the Account
+              section. One tap, same as every other session action here. */}
+          <button
+            onClick={() => void signOut()}
+            aria-label="Sign out"
+            className="h-9 w-9 rounded-full bg-[var(--muted)] flex items-center justify-center"
+          >
+            <LogOut className="h-4 w-4 text-red-600" />
+          </button>
         </div>
       </header>
 

@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
+import { useSignOut } from "@/lib/useSignOut";
 import {
   ArrowLeft, User, Bell, Shield, CreditCard, LogOut,
   ChevronRight, Check, Eye, EyeOff, Smartphone, Lock,
@@ -341,11 +342,14 @@ export default function SettingsPage() {
     }
   };
 
-  const handleLogout = async () => {
-    const { clearAuthToken } = await import("@/lib/api");
-    clearAuthToken();
-    router.push("/auth/login");
-  };
+  /**
+   * Shared with the account menu and the mobile header, so all three do the
+   * same thing. This one used to drop the token and push to /auth/login,
+   * which left the wallet connected: wagmi persists the connection and
+   * reconnects on load, so the next account to sign in on this browser
+   * inherited the previous user's wallet, already attached and able to sign.
+   */
+  const handleLogout = useSignOut();
 
   const SECTIONS = ["Profile", "Notifications", "Security", "Payment", "Privacy", "Account"];
   const [activeSection, setActiveSection] = useState("Profile");
