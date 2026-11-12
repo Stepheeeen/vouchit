@@ -1,4 +1,5 @@
 import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import { randomBytes, timingSafeEqual } from 'crypto';
 import { PrismaService } from '../prisma/prisma.service';
 import { NotificationsService } from '../notifications/notifications.service';
 import { Web3Service } from '../web3/web3.service';
@@ -80,6 +81,7 @@ export class WagersService {
     isSymmetric?: boolean,
     expiryDays?: number,
     category?: string,
+    visibility?: string,
   ) {
     const token = findToken(tokenAddress);
     if (!token) {
@@ -165,6 +167,16 @@ export class WagersService {
         // Mirrored from the escrow entry, never taken from the client: the
         // chain decides who may join, so the listing must agree with it.
         challengerAddress: isOpenWager ? null : onChain.challenger,
+        // Private unless the creator deliberately publishes. Every wager was
+        // listed on Explore before this — name, description and stake — so a
+        // bet between two friends was a public post. Defaulting the other way
+        // means nobody publishes one by accident.
+        visibility: visibility === 'PUBLIC' ? 'PUBLIC' : 'PRIVATE',
+        // 32 bytes from a CSPRNG. The invite link used to be
+        // /vouch/join/<database id>, which is neither secret nor random, so
+        // for a private wager the link has to carry something that cannot be
+        // guessed or walked.
+        inviteToken: randomBytes(32).toString('base64url'),
         // Only the creator has staked so far; the challenger's match doubles it.
         totalPot: stakeAmount.toString(),
         status: 'PENDING_FUNDING',
@@ -200,19 +212,55 @@ export class WagersService {
     return wager;
   }
 
+  /**
+   * The Explore feed.
+   *
+   * This returned every open wager in the database with no visibility filter
+   * at all, so a wager aimed at one named opponent was listed publicly with
+   * both participants' names, the description and the stake. Explore is now
+   * what its name implies: wagers whose creator chose to publish them.
+   *
+   * `null` counts as public. Wagers created before the column existed were
+   * already listed, and quietly hiding them would take away something their
+   * creators can currently see.
+   */
   async findAll() {
     await this.checkAndProcessExpiredWagers();
-    return this.prisma.wager.findMany({
-      where: { status: { in: ['PENDING_FUNDING', 'ACTIVE'] } },
+    const rows = await this.prisma.wager.findMany({
+      where: {
+        status: { in: ['PENDING_FUNDING', 'ACTIVE'] },
+        OR: [{ visibility: 'PUBLIC' }, { visibility: null }],
+      },
       include: {
         creator: { select: PUBLIC_USER_SELECT },
         participants: { include: { user: { select: PUBLIC_USER_SELECT } } },
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    // A public wager's token grants nothing its visibility does not already
+    // give away, but publishing a secret because it happens to be harmless
+    // today is how it stops being harmless tomorrow.
+    return rows.map(({ inviteToken, ...w }) => w);
   }
 
-  async findOne(id: string) {
+  /**
+   * One wager, if the caller is allowed to see it.
+   *
+   * This route has no auth guard and never had an access check, so every
+   * wager in the database was readable by anyone on the internet who had or
+   * guessed an id — description, both participants' names, the stake.
+   *
+   * A private wager is now readable by: a participant, an admin (who has to
+   * read it to resolve a dispute), or whoever holds the invite token. That
+   * last case is the point of the token — the person being invited is not a
+   * participant yet, so they cannot be recognised any other way.
+   *
+   * Refused reads answer "not found" rather than "forbidden". A 403 would
+   * confirm that a wager with that id exists, which is exactly the fact a
+   * private wager is keeping.
+   */
+  async findOne(id: string, viewer?: { userId?: string; role?: string; inviteToken?: string }) {
     await this.checkAndProcessExpiredWagers();
     const wager = await this.prisma.wager.findUnique({
       where: { id },
@@ -223,12 +271,70 @@ export class WagersService {
       },
     });
     if (!wager) throw new NotFoundException('Wager not found');
-    return wager;
+
+    if (!(await this.canView(wager, viewer))) throw new NotFoundException('Wager not found');
+
+    // The token is the key to the door; it must not be handed out to everyone
+    // who walks through it. Only the creator needs it back, to build the
+    // invite link.
+    const isCreator = !!viewer?.userId && viewer.userId === wager.creatorId;
+    return { ...wager, inviteToken: isCreator ? wager.inviteToken : undefined };
+  }
+
+  /** Null visibility means a wager created before the column existed: public. */
+  private async canView(
+    wager: {
+      visibility: string | null;
+      inviteToken: string | null;
+      creatorId: string;
+      challengerAddress?: string | null;
+      participants: Array<{ userId: string }>;
+    },
+    viewer?: { userId?: string; role?: string; inviteToken?: string },
+  ): Promise<boolean> {
+    if (wager.visibility !== 'PRIVATE') return true;
+    if (viewer?.role === 'ADMIN') return true;
+    if (viewer?.userId && wager.participants.some((p) => p.userId === viewer.userId)) return true;
+    if (viewer?.userId && viewer.userId === wager.creatorId) return true;
+    if (
+      viewer?.inviteToken &&
+      wager.inviteToken &&
+      timingSafeEqualStr(viewer.inviteToken, wager.inviteToken)
+    ) {
+      return true;
+    }
+
+    /**
+     * The named opponent can see it without the link.
+     *
+     * Naming someone's wallet IS the invitation — requiring them to also be
+     * sent a link would mean a challenge aimed squarely at one person stayed
+     * invisible to them until the creator remembered to message it over. It
+     * is no weaker than the token: only the owner of that address can hold a
+     * Vouchit account with it linked, which is proven by signature.
+     *
+     * Checked last, and only for a private wager that actually names an
+     * opponent, so the common paths never pay for the extra query.
+     */
+    if (viewer?.userId && wager.challengerAddress) {
+      const me = await this.prisma.user.findUnique({
+        where: { id: viewer.userId },
+        select: { web3Address: true },
+      });
+      if (
+        me?.web3Address &&
+        me.web3Address.toLowerCase() === wager.challengerAddress.toLowerCase()
+      ) {
+        return true;
+      }
+    }
+
+    return false;
   }
 
   async getUserWagers(userId: string) {
     await this.checkAndProcessExpiredWagers();
-    return this.prisma.wager.findMany({
+    const rows = await this.prisma.wager.findMany({
       where: {
         OR: [
           { creatorId: userId },
@@ -241,6 +347,13 @@ export class WagersService {
       },
       orderBy: { createdAt: 'desc' },
     });
+
+    // This list includes wagers the caller only joined, so handing back the
+    // token for every one of them would give a challenger the creator's
+    // share key — the same thing findOne is careful not to do.
+    return rows.map(({ inviteToken, ...w }) =>
+      w.creatorId === userId ? { ...w, inviteToken } : w,
+    );
   }
 
   /**
@@ -248,8 +361,20 @@ export class WagersService {
    * their stake by calling `joinWager` on the escrow contract; this only mirrors
    * the result after verifying it against the chain. No funds move here.
    */
-  async joinWager(wagerId: string, userId: string) {
-    const wager = await this.findOne(wagerId);
+  /**
+   * Join a wager.
+   *
+   * `inviteToken` matters only for a PRIVATE wager with no named opponent:
+   * the link is the invitation, so holding it is what entitles someone to
+   * accept. Where the creator DID name an opponent, the escrow contract
+   * enforces that on-chain in `verifyOnChainJoin` below and no token will
+   * get a stranger past it — the two controls stack rather than replace one
+   * another.
+   */
+  async joinWager(wagerId: string, userId: string, inviteToken?: string) {
+    // Passing the viewer through matters: without it a private wager would
+    // answer "not found" to the very person being invited to join it.
+    const wager = await this.findOne(wagerId, { userId, inviteToken });
 
     if (wager.creatorId === userId) {
       throw new BadRequestException('Creator cannot join their own wager');
@@ -354,7 +479,10 @@ export class WagersService {
    * and mirrors it, so our rows can't drift from the funds.
    */
   async settleWager(wagerId: string, userId: string) {
-    const wager = await this.findOne(wagerId);
+    // The participant check below is the real authorisation; the viewer is
+    // passed so a PRIVATE wager does not answer "not found" to one of its
+    // own two participants before that check is ever reached.
+    const wager = await this.findOne(wagerId, { userId });
 
     if (!wager.contractWagerId) {
       throw new BadRequestException('This wager has no escrow entry');
@@ -453,4 +581,19 @@ export class WagersService {
     };
   }
 
+}
+
+/**
+ * Compare two secrets without leaking their contents through timing.
+ *
+ * `a === b` on a string returns as soon as two characters differ, so how long
+ * the comparison takes depends on how much of the token was guessed
+ * correctly. That is enough to recover a token one character at a time.
+ * Lengths are compared first because `timingSafeEqual` throws on a mismatch.
+ */
+function timingSafeEqualStr(a: string, b: string): boolean {
+  const bufA = Buffer.from(a);
+  const bufB = Buffer.from(b);
+  if (bufA.length !== bufB.length) return false;
+  return timingSafeEqual(bufA, bufB);
 }

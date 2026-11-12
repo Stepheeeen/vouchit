@@ -1,6 +1,7 @@
-import { Controller, Get, Post, Body, Param, UseGuards, Request } from '@nestjs/common';
+import { Controller, Get, Post, Body, Param, Query, UseGuards, Request } from '@nestjs/common';
 import { WagersService } from './wagers.service';
 import { JwtAuthGuard } from '../auth/jwt-auth.guard';
+import { OptionalJwtAuthGuard } from '../auth/optional-jwt-auth.guard';
 
 @Controller('wagers')
 export class WagersController {
@@ -22,6 +23,8 @@ export class WagersController {
       category?: string;
       /** Id of an already-mined escrow entry, verified on-chain before we accept it. */
       contractWagerId: string;
+      /** "PUBLIC" lists it on Explore. Anything else, including absent, is private. */
+      visibility?: string;
     },
   ) {
     return this.wagersService.createWager(
@@ -33,6 +36,7 @@ export class WagersController {
       body.isSymmetric,
       body.expiryDays,
       body.category,
+      body.visibility,
     );
   }
 
@@ -47,9 +51,24 @@ export class WagersController {
     return this.wagersService.getUserWagers(req.user.userId);
   }
 
+  /**
+   * Readable without signing in, because an invite link has to work before
+   * the invited person has an account. The guard is optional rather than
+   * absent so that a signed-in participant can still be recognised on a
+   * private wager; the service decides who sees what.
+   */
+  @UseGuards(OptionalJwtAuthGuard)
   @Get(':id')
-  async getWager(@Param('id') id: string) {
-    return this.wagersService.findOne(id);
+  async getWager(
+    @Param('id') id: string,
+    @Request() req: any,
+    @Query('token') token?: string,
+  ) {
+    return this.wagersService.findOne(id, {
+      userId: req.user?.userId,
+      role: req.user?.role,
+      inviteToken: token,
+    });
   }
 
   @UseGuards(JwtAuthGuard)
@@ -57,10 +76,12 @@ export class WagersController {
   async joinWager(
     @Request() req: any,
     @Param('id') id: string,
+    @Query('token') token?: string,
   ) {
     // The stake is fixed by the escrow entry, so there is no client-supplied
-    // amount to trust here.
-    return this.wagersService.joinWager(id, req.user.userId);
+    // amount to trust here. The token only unlocks a private wager's link;
+    // it cannot override a named opponent, which the contract enforces.
+    return this.wagersService.joinWager(id, req.user.userId, token);
   }
 
   @UseGuards(JwtAuthGuard)

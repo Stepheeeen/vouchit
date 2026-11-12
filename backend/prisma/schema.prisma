@@ -82,6 +82,21 @@ model Wager {
   // The opponent this wager is aimed at, mirrored from the escrow entry's
   // `challenger`. The zero address (or null) means anyone may join.
   challengerAddress String?
+  // "PUBLIC" (listed on Explore, world-readable) or "PRIVATE" (never listed,
+  // readable only via inviteToken, by a participant, or by an admin).
+  //
+  // Nullable on purpose. Deploys do not run `prisma db push`, so a new
+  // non-nullable column makes Prisma refuse to read every document written
+  // before it existed — the same trap the User backfill script was written
+  // for. Null means PUBLIC here, which is what those older wagers already
+  // were, so nothing is retroactively hidden from the people who created it.
+  // New wagers always write an explicit value.
+  visibility      String?
+  // Secret that lets someone open a private wager they are not yet part of.
+  // Deliberately NOT @unique: on MongoDB that index is only built by
+  // `prisma db push`, and every pre-existing wager has a null here, so a
+  // unique index would treat them all as duplicates and fail.
+  inviteToken     String?
   contractWagerId String?  @unique
   tokenAddress    String
   tokenSymbol     String
@@ -98,6 +113,7 @@ model Wager {
 
   @@index([status, expiresAt])
   @@index([creatorId])
+  @@index([inviteToken])
 }
 
 model WagerParticipant {

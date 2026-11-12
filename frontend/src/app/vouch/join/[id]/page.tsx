@@ -1,7 +1,7 @@
 "use client";
 
 import { useEffect, useState } from "react";
-import { useParams, useRouter } from "next/navigation";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import { ArrowLeft, Clock, Shield, AlertCircle, CheckCircle2, ShieldCheck, Trophy } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -14,6 +14,13 @@ import { ConnectWalletButton } from "@/components/wallet/ConnectWalletButton";
 
 export default function JoinVouchPage() {
   const params = useParams<{ id: string }>();
+  /**
+   * The invite secret from a private wager's share link. Without it the API
+   * answers "not found" for a wager the sender fully meant this person to
+   * see, so it has to be read here and sent with both the read and the join.
+   */
+  const searchParams = useSearchParams();
+  const inviteToken = searchParams.get("token") ?? undefined;
   const id = params.id;
   const router = useRouter();
 
@@ -34,7 +41,7 @@ export default function JoinVouchPage() {
       try {
         const { wagersApi, userApi, web3Api } = await import("@/lib/api");
         const [wagerData, profileData, verificationData] = await Promise.all([
-          wagersApi.getById(id),
+          wagersApi.getById(id, inviteToken),
           userApi.getProfile().catch(() => null),
           // Fetched up front so the stake cap is enforced BEFORE the user pays
           // gas — a backend rejection after the on-chain join would strand
@@ -105,7 +112,7 @@ export default function JoinVouchPage() {
 
       setStatus("Confirming your position…");
       const { wagersApi } = await import("@/lib/api");
-      await wagersApi.join(id);
+      await wagersApi.join(id, inviteToken);
 
       setJoined(true);
       setTimeout(() => router.push(`/vouch/${id}`), 1800);

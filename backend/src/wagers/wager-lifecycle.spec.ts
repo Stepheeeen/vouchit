@@ -190,6 +190,17 @@ describe('wager lifecycle (API + escrow + database)', () => {
     const escrowAsBob = chain.escrow.connect(bob) as any;
     await (await escrowAsBob.joinWager(wagerId, { value: STAKE })).wait();
 
+    // Wagers default to PRIVATE now, and this one names Bob's wallet as the
+    // challenger on-chain. Being named IS the invitation: he joins with no
+    // link and no token, because the address the escrow entry points at is
+    // the one his account proved by signature.
+    expect(created.body.visibility).toBe('PRIVATE');
+    expect(created.body.challengerAddress?.toLowerCase()).toBe(bob.address.toLowerCase());
+
+    // The creator gets a token back regardless, to build a share link with.
+    expect(typeof created.body.inviteToken).toBe('string');
+    expect(created.body.inviteToken.length).toBeGreaterThan(20);
+
     const joined = await request(server)
       .post(`/wagers/${dbWagerId}/join`)
       .set('Authorization', `Bearer ${users[1].token}`)

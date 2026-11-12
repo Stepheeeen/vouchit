@@ -14,9 +14,23 @@ export default function InvitePage() {
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 
+  /**
+   * For a private wager the link has to carry the invite token, because the
+   * id alone no longer opens it — that is the whole point of the token.
+   *
+   * The token comes back from the API only to the creator, so this page is
+   * the one place it can be assembled. A public wager needs no token: the
+   * wager is readable by anyone and the bare link is tidier to share.
+   */
+  const inviteToken: string | undefined = wager?.inviteToken;
+  const isPrivate = wager ? wager.visibility === "PRIVATE" : false;
+  const invitePath =
+    isPrivate && inviteToken
+      ? `/vouch/join/${id}?token=${encodeURIComponent(inviteToken)}`
+      : `/vouch/join/${id}`;
   const inviteLink = typeof window !== "undefined"
-    ? `${window.location.origin}/vouch/join/${id}`
-    : `/vouch/join/${id}`;
+    ? `${window.location.origin}${invitePath}`
+    : invitePath;
 
   useEffect(() => {
     const load = async () => {
@@ -126,8 +140,13 @@ export default function InvitePage() {
                 {copied ? "Copied!" : "Copy"}
               </button>
             </div>
-            <p className="text-[10px] font-semibold text-[var(--muted-foreground)] uppercase tracking-widest">
-              Share this link with your opponent. They can join directly.
+            {/* For a private wager this link IS the key — it is what gets
+                someone past the access check — so saying "share it" without
+                saying "only with them" would be half the instruction. */}
+            <p className="text-[10px] font-semibold text-[var(--muted-foreground)] uppercase tracking-widest leading-relaxed">
+              {isPrivate
+                ? "Send this only to your opponent. Anyone holding the link can open this wager."
+                : "Share this link with your opponent. They can join directly."}
             </p>
           </section>
 

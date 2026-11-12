@@ -149,6 +149,8 @@ export const wagersApi = {
     expiryDays: number,
     contractWagerId: string,
     category: string,
+    /** "PUBLIC" lists it on Explore. Anything else, including absent, is private. */
+    visibility: string = 'PRIVATE',
   ) =>
     fetchApi('/wagers', {
       method: 'POST',
@@ -160,13 +162,23 @@ export const wagersApi = {
         expiryDays,
         contractWagerId,
         category,
+        visibility,
       }),
     }),
   getAll: () => fetchApi('/wagers'),
-  getById: (id: string) => fetchApi(`/wagers/${id}`),
+  /**
+   * `token` is the invite secret from a private wager's share link. It is the
+   * only way someone who is not yet a participant can open one, so it has to
+   * travel with the request.
+   */
+  getById: (id: string, token?: string) =>
+    fetchApi(`/wagers/${id}${token ? `?token=${encodeURIComponent(token)}` : ''}`),
   getMy: () => fetchApi('/wagers/my'),
   // The stake is fixed by the escrow entry, so there is no amount to send.
-  join: (id: string) => fetchApi(`/wagers/${id}/join`, { method: 'POST' }),
+  join: (id: string, token?: string) =>
+    fetchApi(`/wagers/${id}/join${token ? `?token=${encodeURIComponent(token)}` : ''}`, {
+      method: 'POST',
+    }),
   /** Sync our records with the escrow after voting on-chain. The winner is
    *  decided by the contract, so nothing is sent. */
   settle: (id: string) => fetchApi(`/wagers/${id}/settle`, { method: 'POST' }),

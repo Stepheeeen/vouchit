@@ -43,6 +43,10 @@ export default function CreateVouchPage() {
   // so every wager created here was open to strangers — while the Join page
   // told people to ask the creator for an invite code that could not exist.
   const [opponent, setOpponent] = useState("");
+  // Private unless the creator deliberately publishes. Every wager used to go
+  // straight onto Explore with both names and the stake, so a bet between two
+  // friends was a public post whether or not they meant it to be.
+  const [visibility, setVisibility] = useState<"PRIVATE" | "PUBLIC">("PRIVATE");
   const [verification, setVerification] = useState<any>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [status, setStatus] = useState("");
@@ -194,6 +198,7 @@ export default function CreateVouchPage() {
         Number(expiryDays),
         wagerId,
         category,
+        visibility,
       );
       router.push(`/vouch/${wager.id}/invite`);
     } catch (err: any) {
@@ -461,6 +466,62 @@ export default function CreateVouchPage() {
             </div>
           </section>
 
+          {/* Visibility */}
+          <section className="flex flex-col gap-3">
+            <span className="text-xs font-semibold uppercase tracking-widest text-[var(--muted-foreground)]">
+              Who can see this
+            </span>
+            <div className="grid grid-cols-2 gap-3">
+              {([
+                {
+                  key: "PRIVATE" as const,
+                  title: "Private",
+                  blurb: "Only people you send the link to.",
+                },
+                {
+                  key: "PUBLIC" as const,
+                  title: "Public",
+                  blurb: "Listed on Explore for anyone to find.",
+                },
+              ]).map((opt) => {
+                const selected = visibility === opt.key;
+                return (
+                  <button
+                    key={opt.key}
+                    type="button"
+                    onClick={() => setVisibility(opt.key)}
+                    aria-pressed={selected}
+                    className={`p-4 text-left border transition-colors ${
+                      selected
+                        ? "bg-[var(--foreground)] text-[var(--background)] border-[var(--foreground)]"
+                        : "bg-white border-[var(--border)] hover:bg-[var(--muted)]"
+                    }`}
+                  >
+                    <div className="text-sm font-bold">{opt.title}</div>
+                    <div
+                      className={`text-[10px] mt-2 font-medium leading-tight ${
+                        selected ? "text-[var(--background)]/80" : "text-[var(--muted-foreground)]"
+                      }`}
+                    >
+                      {opt.blurb}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+            {/* Said plainly rather than buried: the description and the names
+                stay off-chain, but the stake and the wallet addresses are on
+                Base and permanently public. Letting someone believe
+                "private" covers the money would be a lie by omission. */}
+            <p className="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)] leading-relaxed">
+              {visibility === "PRIVATE"
+                ? "Hidden from Explore. Only the invite link opens it."
+                : "Anyone can find this on Explore."}{" "}
+              Either way the stake and wallet addresses are public on Base — only the wording and
+              names stay private.
+            </p>
+          </section>
+
           {/* Opponent */}
           <section className="flex flex-col gap-3">
             <label
@@ -481,7 +542,9 @@ export default function CreateVouchPage() {
             />
             <p id="opponent-help" className="text-[10px] font-semibold uppercase tracking-widest text-[var(--muted-foreground)] leading-relaxed">
               {isOpenWager
-                ? "Open wager — anyone can join it from Explore."
+                ? visibility === "PUBLIC"
+                  ? "Open wager — anyone can join it from Explore."
+                  : "Open wager — whoever you send the link to can join it."
                 : isOpponentValid
                   ? "Only this wallet can join. The escrow contract enforces it."
                   : "That is not a valid wallet address."}
