@@ -15,12 +15,23 @@
  * they log in.
  *
  * Usage:
- *   node scripts/grant-admin.js                       # list who has it
- *   node scripts/grant-admin.js you@example.com       # report, change nothing
- *   node scripts/grant-admin.js you@example.com --apply
+ *   node scripts/grant-admin.js                            # list who has it
+ *   node scripts/grant-admin.js you@example.com            # report, change nothing
+ *   node scripts/grant-admin.js a@x.com b@y.com --apply    # several at once
  *   node scripts/grant-admin.js you@example.com --revoke --apply
  *
  *   DATABASE_URL=... node scripts/grant-admin.js ... --apply
+ *
+ * IMPORTANT: the role lives in the database, so this acts on whichever
+ * database DATABASE_URL points at. A local .env and the deployed service can
+ * easily point at different ones — granting against the wrong database looks
+ * like it worked and changes nothing the live app can see. The database name
+ * is printed on every run; check it is the one you meant.
+ *
+ * The raw MongoDB driver is used rather than Prisma on purpose. Prisma
+ * refuses to read a document that is missing a non-nullable column, which is
+ * a state this database has been in before — and a repair script that cannot
+ * run when the data is broken is no use at all.
  *
  * The role is read from the database on every authenticated request, not
  * from the token, so a change takes effect immediately — the person does not
@@ -33,7 +44,10 @@ async function main() {
   const args = process.argv.slice(2);
   const apply = args.includes('--apply');
   const revoke = args.includes('--revoke');
-  const email = args.find((a) => !a.startsWith('--'))?.trim().toLowerCase();
+  const emails = args
+    .filter((a) => !a.startsWith('--'))
+    .map((a) => a.trim().toLowerCase())
+    .filter(Boolean);
 
   const uri = process.env.DATABASE_URL;
   if (!uri) {
@@ -59,8 +73,8 @@ async function main() {
     `Admins:   ${admins.length ? admins.map((a) => a.email).join(', ') : 'none'}`,
   );
 
-  if (!email) {
-    console.log('\nPass an email address to grant or revoke the role.');
+  if (emails.length === 0) {
+    console.log('\nPass one or more email addresses to grant or revoke the role.');
     if (admins.length === 0) {
       console.log(
         'WARNING: with no admin, nobody can resolve a dispute, and a disputed\n' +
@@ -71,47 +85,58 @@ async function main() {
     return;
   }
 
-  const user = await users.findOne(
-    { email },
-    { projection: { email: 1, role: 1, emailVerified: 1 } },
-  );
-  if (!user) {
-    console.error(`\nNo account with the address ${email} in ${dbName}.`);
-    await client.close();
-    process.exit(1);
-  }
-
   const target = revoke ? 'USER' : 'ADMIN';
-  console.log(`\nAccount:  ${user.email}`);
-  console.log(`Verified: ${user.emailVerified ? 'yes' : 'no'}`);
-  console.log(`Role:     ${user.role || 'USER'}  ->  ${target}`);
+  const planned = [];
+  let missing = 0;
 
-  if (user.role === target) {
-    console.log('\nAlready set. Nothing to do.');
-    await client.close();
-    return;
+  for (const email of emails) {
+    const user = await users.findOne(
+      { email },
+      { projection: { email: 1, role: 1, emailVerified: 1 } },
+    );
+    if (!user) {
+      console.error(`\n${email}: no account with that address in ${dbName}.`);
+      missing += 1;
+      continue;
+    }
+
+    const current = user.role || 'USER';
+    console.log(`\n${user.email}`);
+    console.log(`  verified: ${user.emailVerified ? 'yes' : 'no'}`);
+    console.log(`  role:     ${current}  ->  ${target}${current === target ? '  (no change)' : ''}`);
+    if (current !== target) planned.push(user);
   }
 
   // Removing the last admin leaves disputes unresolvable, which is the exact
   // state this script exists to get out of. Say so rather than doing it
   // quietly.
-  if (revoke && admins.length <= 1 && user.role === 'ADMIN') {
+  if (revoke && admins.length - planned.length <= 0) {
     console.log(
-      '\nWARNING: this is the only admin. Revoking it means no dispute can be\n' +
+      '\nWARNING: this would remove the last admin. No dispute could then be\n' +
         '         resolved until another account is promoted.',
     );
   }
 
+  if (planned.length === 0) {
+    console.log(missing ? '\nNothing to change.' : '\nAlready set. Nothing to do.');
+    await client.close();
+    process.exit(missing ? 1 : 0);
+  }
+
   if (!apply) {
-    console.log('\nDry run. Re-run with --apply to make the change.');
+    console.log(`\nDry run. Re-run with --apply to change ${planned.length} account(s).`);
     await client.close();
     return;
   }
 
-  await users.updateOne({ _id: user._id }, { $set: { role: target } });
-  console.log(`\nDone. ${user.email} is now ${target}.`);
+  const res = await users.updateMany(
+    { _id: { $in: planned.map((u) => u._id) } },
+    { $set: { role: target } },
+  );
+  console.log(`\nDone. ${res.modifiedCount} account(s) are now ${target}.`);
   console.log('Takes effect immediately — no need to sign out and back in.');
   await client.close();
+  if (missing) process.exit(1);
 }
 
 main().catch((err) => {

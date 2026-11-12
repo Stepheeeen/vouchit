@@ -67,6 +67,7 @@
     "eslint-plugin-prettier": "^5.2.2",
     "globals": "^17.0.0",
     "jest": "^30.0.0",
+    "mongodb": "^7.5.0",
     "mongodb-memory-server": "^11.2.0",
     "prettier": "^3.4.2",
     "prisma": "^5.22.0",
