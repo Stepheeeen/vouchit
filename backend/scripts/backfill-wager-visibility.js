@@ -15,6 +15,18 @@
  * Usage:
  *   node scripts/backfill-wager-visibility.js            # report, change nothing
  *   node scripts/backfill-wager-visibility.js --apply
+ *
+ * To act on a DEPLOYED database, put its connection string in a gitignored
+ * file and name it, rather than pasting the credential onto the command line
+ * where it lands in shell history and the shell may mangle a `$` in the
+ * password:
+ *
+ *   echo 'DATABASE_URL=...' > .env.production.local
+ *   node scripts/backfill-wager-visibility.js --db-env=.env.production.local --apply
+ *
+ * The server and database it is about to act on are printed first. Check
+ * them: a local .env and a deployed service can both point at a database
+ * called "vouchit" on different clusters.
  */
 require('dotenv').config({ quiet: true });
 const { MongoClient } = require('mongodb');
