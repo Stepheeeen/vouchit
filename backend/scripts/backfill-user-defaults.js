@@ -28,6 +28,7 @@
  */
 require('dotenv').config({ quiet: true });
 const { MongoClient } = require('mongodb');
+const { requireDatabaseTarget } = require('./db-target');
 
 /**
  * Field -> value, mirroring the @default() in prisma/schema.prisma.
@@ -58,23 +59,13 @@ const DEFAULTS = {
 async function main() {
   const apply = process.argv.includes('--apply');
   const uri = process.env.DATABASE_URL;
-  if (!uri) {
-    console.error('DATABASE_URL is not set.');
-    process.exit(1);
-  }
-
-  const dbName = (uri.match(/\/([^/?]+)\?/) || [])[1];
-  if (!dbName) {
-    console.error('Could not read a database name out of DATABASE_URL.');
-    process.exit(1);
-  }
+  const dbName = requireDatabaseTarget();
 
   const client = new MongoClient(uri);
   await client.connect();
   const users = client.db(dbName).collection('User');
 
   const total = await users.countDocuments();
-  console.log(`Database: ${dbName}`);
   console.log(`Users:    ${total}`);
   console.log(apply ? 'Mode:     APPLY\n' : 'Mode:     dry run (pass --apply to write)\n');
 

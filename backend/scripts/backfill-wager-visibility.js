@@ -18,20 +18,13 @@
  */
 require('dotenv').config({ quiet: true });
 const { MongoClient } = require('mongodb');
+const { requireDatabaseTarget } = require('./db-target');
 const { randomBytes } = require('crypto');
 
 async function main() {
   const apply = process.argv.includes('--apply');
   const uri = process.env.DATABASE_URL;
-  if (!uri) {
-    console.error('DATABASE_URL is not set.');
-    process.exit(1);
-  }
-  const dbName = (uri.match(/\/([^/?]+)\?/) || [])[1];
-  if (!dbName) {
-    console.error('Could not read a database name out of DATABASE_URL.');
-    process.exit(1);
-  }
+  const dbName = requireDatabaseTarget();
 
   const client = new MongoClient(uri);
   await client.connect();
@@ -45,7 +38,6 @@ async function main() {
     $or: [{ inviteToken: { $exists: false } }, { inviteToken: null }],
   });
 
-  console.log(`Database:            ${dbName}`);
   console.log(`Wagers:              ${total}`);
   console.log(`Without visibility:  ${missingVisibility}  -> PUBLIC`);
   console.log(`Without inviteToken: ${missingToken}  -> generated`);

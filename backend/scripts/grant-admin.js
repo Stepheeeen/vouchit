@@ -39,6 +39,7 @@
  */
 require('dotenv').config({ quiet: true });
 const { MongoClient } = require('mongodb');
+const { requireDatabaseTarget } = require('./db-target');
 
 async function main() {
   const args = process.argv.slice(2);
@@ -50,15 +51,7 @@ async function main() {
     .filter(Boolean);
 
   const uri = process.env.DATABASE_URL;
-  if (!uri) {
-    console.error('DATABASE_URL is not set.');
-    process.exit(1);
-  }
-  const dbName = (uri.match(/\/([^/?]+)\?/) || [])[1];
-  if (!dbName) {
-    console.error('Could not read a database name out of DATABASE_URL.');
-    process.exit(1);
-  }
+  const dbName = requireDatabaseTarget();
 
   const client = new MongoClient(uri);
   await client.connect();
@@ -68,7 +61,6 @@ async function main() {
     .find({ role: 'ADMIN' }, { projection: { email: 1 } })
     .toArray();
 
-  console.log(`Database: ${dbName}`);
   console.log(
     `Admins:   ${admins.length ? admins.map((a) => a.email).join(', ') : 'none'}`,
   );
